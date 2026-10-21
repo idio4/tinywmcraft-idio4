@@ -16,9 +16,11 @@ from .rejection import departure_eligibility,retry_selection,sampling_seed,VERSI
 def cohort(report,rows,conditional):
     from .dependencies import summarize_measurements
     from .milestone import summarize
+    from .performance import summarize as mechanic_frequencies
     result=deepcopy({k:v for k,v in report.items() if k not in ('samples','v1_comparison_same_rgb')})
     summary=summarize_measurements(rows)
     result.update(samples=rows,fixed_route_required=conditional,measurement_aggregate=summary,
+                  mechanic_performance=mechanic_frequencies(rows),
                   scenario_aggregate=summary['overall_scenarios'],aggregate=summarize(rows) if rows else None,
                   aggregate_by_scope={'static':summarize(rows)} if rows else {},
                   reference_reader_validation_scope='all retained attempts, same independent reader',
@@ -78,8 +80,13 @@ def finalize(out, engine=None):
     ordinary['sampling_summary']='First sample for each engine seed, without any eligibility filtering.'
     conditional['sampling_summary']=summary
     dump_json(out/'unconditional-results.json',ordinary);dump_json(out/'conditional-results.json',conditional)
+    from .performance import write_csv, markdown
+    for name, result in (('unconditional',ordinary),('conditional',conditional)):
+        write_csv(out/(name+'-mechanics.csv'),result['mechanic_performance'])
+        (out/(name+'-mechanics.md')).write_text('\n'.join(markdown(result['mechanic_performance']))+'\n')
     dump_json(out/'summary.json',summary)
     gallery=deepcopy(report);gallery.update(benchmark_cohorts=summary,
+        mechanic_performance=conditional['mechanic_performance'],mechanic_performance_cohort='CONDITIONAL_SELECTED_ELIGIBLE',
         dependency_aggregate_by_scope=conditional['dependency_aggregate_by_scope'],
         scenario_aggregate=conditional['scenario_aggregate'])
     for i,row in enumerate(gallery['samples']):

@@ -113,7 +113,7 @@ def export_gifs(evidence_dirs, results_files, out, gifs='all'):
             data['cohorts'].append(dict(id=cid,label=f'{label} · {len(rows)} attempts',summary=summary(list(rows.values())),
                 description=f'{len(rows)} ordinary attempts in this corpus; one selected branch each. Alternative branches, supplements and retries are not added. '+
                             f'{len({r.get("scenario",Path(r["evidence"]).name) for r in rows.values()})} scenario types. '+
-                            (f'{len({r["seed"] for r in rows.values()})} engine seeds; {len({r.get("model_sample",0) for r in rows.values()})} model sample(s) per state.' if all('seed' in r for r in rows.values()) else 'Seed design unavailable in legacy result metadata.')))
+                            (f'{len({r["seed"] for r in rows.values()})} engine seeds; see each scenario for draws per seed.' if all('seed' in r for r in rows.values()) else 'Seed design unavailable in legacy result metadata.')))
         for name in manifest['cases']:
             meta,arrays=load_case(evidence/name);row=rows[name]
             if 'branch_outcomes' not in row:raise ValueError('Score independent branches before export')
@@ -179,14 +179,15 @@ def export_gifs(evidence_dirs, results_files, out, gifs='all'):
     data['default_cohort']=next((c['id'] for c in data['cohorts'] if c['label'].startswith('Focused mechanics')),data['cohorts'][0]['id'])
     import csv
     with (out/'mechanics.csv').open('w',newline='',encoding='utf-8') as stream:
-        writer=csv.DictWriter(stream,fieldnames=['cohort','scope','kind','name','category','required','attempts','eligible','passed','failed','unknown','not_tested','not_applicable','pass_rate','decision_coverage','eligibility_coverage','engine_seed_count','model_sample_count'])
+        writer=csv.DictWriter(stream,fieldnames=['cohort','scope','measurement_scope','kind','name','scenario','category','required','attempts','eligible','passed','failed','unknown','not_tested','not_applicable','pass_rate','decision_coverage','eligibility_coverage','engine_seed_count','model_sample_count','samples_per_seed_min','samples_per_seed_max','instances','applicable'])
         writer.writeheader()
         for cohort in data['cohorts']:
             for scope,score in cohort['summary'].items():
                 frequency=score.get('mechanics',{})
                 for kind,entries in (('scenario',frequency.get('scenarios',[])),('atomic',frequency.get('atomic',[]))):
                     for row in entries:
-                        writer.writerow({key:val for key,val in dict(cohort=cohort['id'],scope=scope,kind=kind,**row).items() if key in writer.fieldnames})
+                        entry=dict(row,cohort=cohort['id'],scope=scope,measurement_scope=row.get('scope'),kind=kind)
+                        writer.writerow({key:val for key,val in entry.items() if key in writer.fieldnames})
     data['downloads']['Mechanic frequencies CSV']='mechanics.csv'
     dump_json(out/'index.json',index);write_page(out,data)
     return out/'index.html'

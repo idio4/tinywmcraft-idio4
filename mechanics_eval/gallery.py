@@ -36,12 +36,12 @@ def summary(rows, ordinary=False):
     from .dependencies import atomic_rates, CATEGORIES
     import numpy as np
     from .milestone import rates
+    from .performance import summarize as mechanic_summary, scenario_verdict, atomic_stages
     result={}
     for scope in ('all','static','dynamic'):
         selected=[r for r in rows if scope=='all' or r.get('scope','static')==scope]
-        scenarios=[r.get('ordinary_scenario_results_by_branch' if ordinary else 'scenario_results_by_branch',
-                         r.get('branch_outcomes',[r['outcome']]))[0] for r in selected]
-        stages=[s for r in selected for s in r.get('ordinary_measurements_by_branch' if ordinary else 'measurements_by_branch',[[],[]])[0]]
+        scenarios=[scenario_verdict(r, ordinary) for r in selected]
+        stages=[s for r in selected for s in atomic_stages(r, ordinary)]
         result[scope]=dict(scenarios=rates([dict(s,complete=s['status']!='unknown') for s in scenarios]),
             required=atomic_rates([s for s in stages if s['required']]),
             diagnostic=atomic_rates([s for s in stages if not s['required']]),
@@ -50,7 +50,6 @@ def summary(rows, ordinary=False):
         groups=[g['required'] for g in result[scope]['categories'].values() if g['required']['eligible']]
         result[scope]['category_macro']={k:float(np.mean([g[k] for g in groups])) if groups else None
             for k in ('success_rate','measurement_coverage','eligibility_coverage')}
-    from .performance import summarize as mechanic_summary
     for scope in result:
         scoped = [r for r in rows if scope == "all" or r.get("scope", "static") == scope]
         result[scope]["mechanics"] = mechanic_summary(scoped, ordinary=ordinary)

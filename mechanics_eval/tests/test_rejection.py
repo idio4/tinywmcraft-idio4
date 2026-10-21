@@ -131,7 +131,7 @@ class RejectionTests(unittest.TestCase):
             self.assertEqual(result['status'],'pass')
 
     def test_missing_target_position_is_not_a_disappearance_claim(self):
-        from mechanics_eval.unknown_audit import diagnose
+        from mechanics_eval.audit.missing import diagnose
         raw=dict(mechanic='old_tracked_table',status='unknown',milestone=13,motion_trace=[dict(position=None,reason='insufficient_distinct_landmarks')]*14)
         fact=dict(field='tile:tracked_table',expected=11,observed=None,reason='target_unreadable')
         explanation=diagnose(raw,{},fact,13,self.correct,self.refs[0].actions)
@@ -233,6 +233,14 @@ class RejectionTests(unittest.TestCase):
                 self.assertEqual(report['unconditional']['n'],1)
                 self.assertEqual(report['seeds'][0]['selection']['status'],'RETRY_BUDGET_EXHAUSTED')
                 self.assertEqual(report['total_generated_attempts'],3)
+                selected=json.loads((args.out/'conditional-results.json').read_text())
+                first=json.loads((args.out/'unconditional-results.json').read_text())
+                gallery=json.loads((args.out/'gallery-results.json').read_text())
+                self.assertEqual(selected['mechanic_performance'],dict(scenarios=[],atomic=[]))
+                self.assertEqual(first['mechanic_performance']['scenarios'][0]['attempts'],1)
+                self.assertEqual(gallery['mechanic_performance'],selected['mechanic_performance'])
+                self.assertEqual(len((args.out/'conditional-mechanics.csv').read_text().splitlines()),1)
+                self.assertTrue((args.out/'unconditional-mechanics.md').is_file())
             self.assertEqual(calls,[101,101,102,102]*2)
             for i in range(3):
                 _,a=load_case(root/'a/evidence'/f'table_leave_return_s4_m{i}')

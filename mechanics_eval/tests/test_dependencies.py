@@ -119,6 +119,12 @@ class DependencyTests(unittest.TestCase):
             row=first['samples'][0]
             self.assertEqual(row['outcome']['status'],'pass')
             self.assertEqual(row['scenario_result']['status'],'fail')
+            import csv
+            with (root/'first/samples.csv').open() as stream:
+                record=next(csv.DictReader(stream))
+            self.assertEqual(record['status'],'pass')
+            self.assertEqual(record['scenario_status'],'fail')
+            self.assertEqual(first['mechanic_performance']['scenarios'][0]['passed'],0)
             self.assertEqual(row['scenario_result']['first_failing_stage'],'inventory_persistence.wood_pickaxe')
             self.assertEqual(row['scenario_result']['first_failure']['timestep'],5)
             export_gifs([source],[root/'first/results.json'],root/'gallery')

@@ -70,13 +70,19 @@ No training or `eval.py` changes are necessary.
 
 The key output is **per-mechanic pass frequency**, not a pooled PASS/FAIL total. The report opens with a grouped table, for example **Stone pickaxe crafting: 9/10 (90%)**, showing the exact number of attempts, failures and UNKNOWN cases. This is an illustration, not a claim about the included checkpoint.
 
-- **Scenario frequencies:** PASS / all attempts of that specific scenario within the currently selected cohort and scope. Ten engine seeds measure frequency under controlled test variations, not probability of success in arbitrary gameplay.
-- **Atomic mechanics:** Inspect required checks separately (tool creation, ingredient accounting, inventory persistence, etc.). Their rate is PASS / eligible checks; NOT_TESTED prerequisites and UNKNOWN observations are displayed explicitly.
+- **Scenario frequencies:** PASS / all attempts of that specific scenario within the currently selected cohort and scope. Decision coverage is (PASS + FAIL) / attempts. UNKNOWN remains in the denominator. Ten engine seeds measure frequency under controlled test variations, not probability of success in arbitrary gameplay.
+- **Atomic mechanics:** Inspect required checks separately (tool creation, ingredient accounting, inventory persistence, etc.). Their rate is PASS / eligible checks, with eligible = PASS + FAIL + UNKNOWN. Applicable = all instances except NOT_APPLICABLE. Eligibility coverage is eligible / applicable, so prerequisite gaps (NOT_TESTED) remain visible without becoming successes or ordinary failures. No eligible checks means an undefined rate, displayed as `—` / `N/A`, not 0% or 100%.
+- **Atomic context:** Atomic frequencies stay separate by scenario, scope, category, and required/diagnostic role. The same check name in two different scenarios produces two rows. Optional diagnostic failures do not alter the saved scenario verdict.
+- **Sampling support:** Each scenario shows unique engine-seed count and the minimum–maximum number of model draws per seed. Repeated draws add attempts, not independent engine seeds. `model_sample_count` in machine-readable summaries counts distinct model-sample indices; it is not necessarily a uniform number of draws per seed, especially for conditional retries.
 - **No pooling:** The focused, diagnostic, movement, placement, first-sample, conditional-selected and rejected-attempt cohorts remain separate. The report never adds their overlapping trials into one model-quality score.
 - **Uncertainty:** 9/10 is stronger descriptive evidence than 1/1, but ten runs are still a small, structured sample. No arbitrary threshold declares a model globally "good."
-- **Inspect evidence:** Click a mechanic row in the HTML report to filter the corresponding cases and examine failing GIFs or atomic measurements.
+- **Inspect evidence:** Click a scenario's mechanic button to filter its exact name, scope, and selected-action branch. This avoids matching similarly named scenarios or adding alternative branches to the displayed attempts. You can then choose other branches or use the free-text search; Reset gallery clears the exact-name filter without changing the summary denominator.
 
-The same frequencies are available in `report/gallery.json`, `report/mechanics.csv`, `results.json` under each cohort's `summary[scope].mechanics`, and in the scoring outputs `scores/<group>/mechanics.csv` and `scores/<group>/summary.md`. New runs automatically generate these files. Existing saved RGB evidence can be rescored or re-exported without new model inference.
+The same frequencies are available in `report/gallery.json`, `report/mechanics.csv`, root `results.json` under each cohort's `summary[scope].mechanics`, and in `scores/<group>/results.json` → `mechanic_performance`, `scores/<group>/mechanics.csv`, and `scores/<group>/summary.md`. JSON is also embedded in the standalone HTML. The gallery CSV identifies both the selected summary `scope` (`all`, `static`, or `dynamic`) and each row's `measurement_scope`; these are alternative views, not additional trials to sum. Scenario and atomic rows are distinguished by `kind`, with `scenario` retaining the atomic check's context.
+
+Conditional `unconditional-results.json` and `conditional-results.json` recompute frequencies from their own first-sample and selected cohorts. Their accompanying `unconditional-mechanics.csv` / `.md` and `conditional-mechanics.csv` / `.md` use those same counts. A fully exhausted retry budget can yield zero selected attempts; its scenario list is empty rather than borrowing all-attempt frequencies. In `gallery-results.json`, `mechanic_performance` is explicitly labeled as the conditional-selected cohort; individual `samples` also retain inspection attempts and ordinary views for export. The report computes each of its first/selected/rejected/all-attempt views separately. Rejected/all-attempt frequencies are inspection-only and must not be interpreted as benchmark success estimates.
+
+The legacy `samples.csv` columns `status`, `complete`, and fact counts describe the original primary atomic measurement. Use the added `scenario_status` and `scenario_complete` columns for whole-interaction verdicts, or `mechanics.csv` for per-scenario/per-atomic frequencies. New runs generate these outputs automatically. Existing saved RGB evidence can be rescored or re-exported to a fresh directory without new model inference; re-export does not rewrite old source score JSON.
 
 ## What is tested?
 
@@ -210,7 +216,7 @@ python -m mechanics_eval.cli score \
   --out mechanics_eval/runs/custom-scores
 ```
 
-Required options are `--evidence DIR` (a complete collection) and `--out DIR` (a new score directory). Scoring writes `results.json`, `samples.csv`, `summary.md`, and per-case measurements and diagnostics without generating new model frames.
+Required options are `--evidence DIR` (a complete collection) and `--out DIR` (a new score directory). Scoring writes `results.json`, `mechanics.csv`, `samples.csv`, `summary.md`, and per-case measurements and diagnostics without generating new model frames.
 
 Optional `--measurements DIR` replays readings from a matching score directory or reading cache. Reader profiles and evidence-manifest hashes must match; this is not a cache for a different collection:
 
@@ -247,7 +253,7 @@ python -m mechanics_eval.cli conditional-route \
 
 The input must use one real conditioning frame, incoming NOOP, and the original fixed 16-step table-return sequence. Engine seeds and first model seeds come from the saved evidence; there are no separate `--seed` or `--model-seed` options here. Retry model seed `i` is `(first_model_seed + i * seed_step) mod 2**32`. Retries use batch size 1, retain paired branch keys, and stop at the first attempt that is not confidently rejected for a blocked newly revealed departure. A model failure or ambiguous observation does not trigger rejection sampling.
 
-Outputs include `evidence/`, `readings/`, `sampling.json`, `all-attempt-scores/`, `summary.json`, `unconditional-results.json`, `conditional-results.json`, and `gallery-results.json`. First samples and conditionally selected attempts retain separate denominators.
+Outputs include `evidence/`, `readings/`, `sampling.json`, `all-attempt-scores/`, `summary.json`, `unconditional-results.json`, `conditional-results.json`, and `gallery-results.json`. The first-sample and conditional-selected cohorts each also get their own `*-mechanics.csv` and `*-mechanics.md` files. First samples and conditionally selected attempts retain separate denominators.
 
 ### Export a report from saved results
 
@@ -354,6 +360,17 @@ Run the complete test suite:
 ```bash
 python -m unittest discover -s mechanics_eval/tests -v
 ```
+
+Add `-b` to buffer application prints from passing tests and show them only on failures. Import-time library messages may still appear. This does not change evaluation progress logging.
+
+Run synthetic reporting and Node interaction regressions without historical evidence or model inference:
+
+```bash
+python -m unittest -v -b mechanics_eval.tests.test_performance \
+  mechanics_eval.tests.test_reporting_integration
+```
+
+These cover denominator edge cases, required versus diagnostic checks, scope and cohort separation, model draws versus seeds, CSV/JSON/embedded HTML consistency, all GIF modes, links, and exact-name mechanic clicks. Node.js is needed for interaction checks; that test explicitly skips if Node is unavailable.
 
 Run only orchestration tests with mocked stages and model loading:
 

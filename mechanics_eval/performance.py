@@ -8,17 +8,21 @@ from pathlib import Path
 STATUSES = ("pass", "fail", "unknown")
 
 
-def _scenario(row, ordinary):
+def scenario_verdict(row, ordinary=False):
     key = "ordinary_scenario_results_by_branch" if ordinary else "scenario_results_by_branch"
-    branches = row.get(key)
+    branches = row.get(key) or row.get("scenario_results_by_branch")
     if branches:
         return branches[0]
-    return row.get("scenario_result", row["outcome"])
+    if "scenario_result" in row:
+        return row["scenario_result"]
+    if row.get("branch_outcomes"):
+        return row["branch_outcomes"][0]
+    return row["outcome"]
 
 
-def _stages(row, ordinary):
+def atomic_stages(row, ordinary=False):
     key = "ordinary_measurements_by_branch" if ordinary else "measurements_by_branch"
-    return (row.get(key) or row.get("measurements_by_branch") or [[], []])[0]
+    return row.get(key, row.get("measurements_by_branch", [[], []]))[0]
 
 
 def _counts(verdicts):
@@ -44,23 +48,26 @@ def summarize(rows, ordinary=False):
     """
     rows = list(rows)
     scenarios = []
-    for name in sorted({r.get("scenario", "") for r in rows}):
-        selected = [r for r in rows if r.get("scenario", "") == name]
-        values = _counts([_scenario(r, ordinary) for r in selected])
+    for name, scope in sorted({(r.get("scenario", ""), r.get("scope", "static")) for r in rows}):
+        selected = [r for r in rows if r.get("scenario", "") == name and r.get("scope", "static") == scope]
+        values = _counts([scenario_verdict(r, ordinary) for r in selected])
         seeds = sorted({r["seed"] for r in selected if "seed" in r})
         samples = sorted({r.get("model_sample", 0) for r in selected})
-        scenarios.append(dict(name=name, label=name.replace("_", " ").capitalize(),
+        counts_per_seed = [sum(r.get("seed") == seed for r in selected) for seed in seeds]
+        scenarios.append(dict(name=name, scenario=name, label=name.replace("_", " ").capitalize(),
             category=selected[0].get("category", "uncategorized"),
-            scope=selected[0].get("scope", "static"),
+            scope=scope,
             engine_seed_count=len(seeds), model_sample_count=len(samples),
+            samples_per_seed_min=min(counts_per_seed) if counts_per_seed else None,
+            samples_per_seed_max=max(counts_per_seed) if counts_per_seed else None,
             seeds=seeds, **values))
 
     stages = []
-    keys = sorted({(s["name"], bool(s.get("required", False)))
-                   for r in rows for s in _stages(r, ordinary)})
-    for name, required in keys:
-        selected = [s for r in rows for s in _stages(r, ordinary)
-                    if s["name"] == name and bool(s.get("required", False)) == required]
+    keys = sorted({(r.get("scenario", ""), s["name"], s.get("category", "uncategorized"), bool(s.get("required", False)), r.get("scope", "static"))
+                   for r in rows for s in atomic_stages(r, ordinary)})
+    for scenario, name, category, required, scope in keys:
+        selected = [s for r in rows if r.get("scope", "static") == scope and r.get("scenario", "") == scenario for s in atomic_stages(r, ordinary)
+                    if s["name"] == name and s.get("category", "uncategorized") == category and bool(s.get("required", False)) == required]
         counts = {s: sum(v["status"] == s for v in selected)
                   for s in (*STATUSES, "not_tested", "not_applicable")}
         if sum(counts.values()) != len(selected):
@@ -68,7 +75,7 @@ def summarize(rows, ordinary=False):
         applicable = len(selected) - counts["not_applicable"]
         eligible = counts["pass"] + counts["fail"] + counts["unknown"]
         stages.append(dict(name=name, label=name.replace("_", " ").replace(".", ": "),
-            category=selected[0].get("category", "uncategorized"),
+            scenario=scenario, category=category, scope=scope,
             required=required, instances=len(selected), applicable=applicable,
             eligible=eligible, passed=counts["pass"], failed=counts["fail"],
             unknown=counts["unknown"], not_tested=counts["not_tested"],
@@ -82,10 +89,11 @@ def summarize(rows, ordinary=False):
 def write_csv(path, performance):
     """Export a machine-readable table with explicit, non-pooled denominators."""
     path = Path(path)
-    columns = ("kind", "name", "category", "required", "scope", "attempts",
+    columns = ("kind", "name", "scenario", "category", "required", "scope", "attempts",
                "eligible", "passed", "failed", "unknown", "not_tested",
                "not_applicable", "pass_rate", "decision_coverage",
-               "eligibility_coverage", "engine_seed_count", "model_sample_count")
+               "eligibility_coverage", "engine_seed_count", "model_sample_count",
+               "samples_per_seed_min", "samples_per_seed_max", "instances", "applicable")
     with path.open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=columns)
         writer.writeheader()
@@ -93,3 +101,25 @@ def write_csv(path, performance):
             writer.writerow({k: v for k, v in dict(kind="scenario", **item).items() if k in columns})
         for item in performance["atomic"]:
             writer.writerow({k: v for k, v in dict(kind="atomic", **item).items() if k in columns})
+
+
+def markdown(performance):
+    """Use the same counts and denominators as JSON, CSV and the viewer."""
+    def pct(value):
+        return f'{value:.1%}' if value is not None else 'N/A'
+    lines = ['', '## Scenario pass frequency by mechanic', '',
+             'PASS / attempted trials; UNKNOWN remains in the denominator. Frequencies describe these controlled trials, not general competence.', '',
+             '| Scenario | Scope | Pass / attempts | Pass rate | Fail | Unknown | Decision coverage | Engine seeds | Draws per seed (min–max) |',
+             '|---|---|---:|---:|---:|---:|---:|---:|---|']
+    for row in performance['scenarios']:
+        draws = f"{row['samples_per_seed_min']}–{row['samples_per_seed_max']}" if row['samples_per_seed_min'] is not None else 'N/A'
+        lines.append(f"| {row['name']} | {row['scope']} | {row['passed']}/{row['attempts']} | {pct(row['pass_rate'])} | {row['failed']} | {row['unknown']} | {pct(row['decision_coverage'])} | {row['engine_seed_count']} | {draws} |")
+    for required, title in ((True, 'Required atomic checks'), (False, 'Separate diagnostic checks')):
+        lines += ['', '## '+title, '',
+                  'PASS / eligible checks. Eligibility is eligible / applicable; NOT_TESTED is a prerequisite gap and NOT_APPLICABLE is excluded. Diagnostics do not determine scenario verdicts.', '',
+                  '| Scenario | Atomic mechanic | Scope | Pass / eligible | Pass rate | Fail | Unknown | NOT_TESTED | N/A | Eligibility coverage |',
+                  '|---|---|---|---:|---:|---:|---:|---:|---:|---:|']
+        for row in performance['atomic']:
+            if row['required'] == required:
+                lines.append(f"| {row['scenario']} | {row['name']} | {row['scope']} | {row['passed']}/{row['eligible']} | {pct(row['pass_rate'])} | {row['failed']} | {row['unknown']} | {row['not_tested']} | {row['not_applicable']} | {pct(row['eligibility_coverage'])} |")
+    return lines
