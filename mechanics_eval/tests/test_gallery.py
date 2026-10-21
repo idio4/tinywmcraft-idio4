@@ -116,50 +116,14 @@ class GalleryTests(unittest.TestCase):
             page=(Path(tmp)/'index.html').read_text()
             self.assertNotIn('</script><img src=x',page)
 
-    def test_complete_snapshot_authority_links_and_privacy(self):
+    def test_compact_example_gifs_are_present(self):
+        """The repository ships two illustration GIFs, not a full generated report."""
         snapshot=Path(__file__).resolve().parents[1]/'example'
-        if not snapshot.exists():self.skipTest('snapshot has not been built')
-        data=json.loads((snapshot/'gallery.json').read_text())
-        result=json.loads((snapshot/'results.json').read_text())
-        self.assertEqual(len(result['source_sha256']),64)
-        self.assertEqual(result['status'],'candidate_not_finalized')
-        self.assertEqual(len(list(snapshot.rglob('*.gif'))),2)
-        self.assertFalse(list(snapshot.rglob('*.npz')))
-        counts=[(20,5,2),(101,39,0),(40,3,7),(10,0,0)]
-        labels=['Existing diagnostic','Focused mechanics','Controlled movement','Table placement']
-        from mechanics_eval.gallery import summary
-        for cohort in data['cohorts']:
-            rows=[]
-            for card in data['cards']:
-                if cohort['id'] not in card['cohorts'] or card['branch']!='selected':continue
-                view=card['views'].get('ordinary',card['views']['current']) if cohort['id']!='selected' else card['views']['current']
-                rows.append(dict(outcome={'status':view['status']},scope=card['scope'],
-                    scenario_results_by_branch=[{'status':view['status']}],measurements_by_branch=[view['stages']]))
-            self.assertEqual(summary(rows),cohort['summary'])
-        for i,(counts,label) in enumerate(zip(counts,labels)):
-            actual=next(c for c in data['cohorts'] if c['id']==f'ordinary:{i}')
-            self.assertEqual(tuple(actual['summary']['all']['scenarios'][k] for k in ('pass','fail','unknown')),counts)
-            self.assertTrue(actual['label'].startswith(label))
-        self.assertEqual(len(data['cards']),(227+22)*2)
-        conditional=[c for c in data['cards'] if 'attempts' in c['cohorts']]
-        self.assertEqual(len(conditional),44)
-        self.assertEqual(sum(c['selection']['decision']=='REJECTED_BLOCKED_ROUTE' for c in conditional),24)
-        self.assertEqual(sum(c['selection']['selected_conditional'] for c in conditional),20)
-        for card in conditional:
-            self.assertTrue(card['selection']['reason'])
-            if card['selection']['decision']=='REJECTED_BLOCKED_ROUTE':self.assertTrue(card['selection']['witnesses'])
-        for card in data['cards']:
-            record=json.loads((snapshot/card['links']['Branch evidence JSON']).read_text())
-            self.assertEqual(record['views'],card['views'])
-            self.assertEqual(record['counterfactual']['status'],card['counterfactual_status'])
-        page=(snapshot/'index.html').read_text()
-        self.assertIn('<h1>TinyWMCraft Mechanics Validation</h1>',page)
-        self.assertNotIn('MECHANICS LAB',page)
-        self.assertNotIn('Good pixels',page)
-        for path in snapshot.rglob('*'):
-            if path.is_file() and path.suffix in ('.html','.json','.md'):
-                for private in ('/Users/','/home/','file://'):self.assertNotIn(private,path.read_text(),str(path))
-        self.assert_links(snapshot)
+        self.assertTrue((snapshot/'LICENSE.txt').is_file())
+        for filename in ('craft_wood_pickaxe_s0_m0.gif','craft_stone_pickaxe_s0_m0.gif'):
+            image=snapshot/'media'/filename
+            self.assertTrue(image.is_file(), str(image))
+            self.assertIn(image.read_bytes()[:6], (b'GIF87a',b'GIF89a'))
 
     def test_supplement_labels_use_actual_scenarios(self):
         if not ROOT.exists():self.skipTest('saved evidence unavailable')

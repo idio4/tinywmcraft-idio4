@@ -1,122 +1,100 @@
 # TinyWMCraft Mechanics Validation
 
-Tests whether a TinyWMCraft world model reproduces selected **Craftax-Classic game mechanics**, not just plausible-looking frames. Each scenario starts from a controlled real game state; the checkpoint receives RGB observations and actions, generates the subsequent frames, and is judged using independent visual measurements. The tests do not train a model or agent.
+An **optional mechanics benchmark** for [TinyWMCraft](https://github.com/Maharishiva/tinywmcraft). It tests whether an action-conditioned world model respects Craftax-Classic rules such as crafting costs, resource gathering, movement, placement, and object persistence, instead of judging only video similarity.
 
-**[Example interactive results](example/index.html)** (open the downloaded HTML locally). The example folder contains all saved case verdicts and diagnostic details plus two illustrative GIFs; full generated GIF collections belong in local run outputs.
+The validator supplies controlled real-game RGB observations and action sequences, generates model frames through **the same inference API used by TinyWMCraft's original `eval.py`**, and independently scores visible consequences. It does not train a model or modify the original TinyWMCraft benchmark. The entire feature lives in `mechanics_eval/`; upstream `train.py`, `eval.py`, `docs/`, and the root README are unchanged.
 
-Current atomic verdict, coverage and conditional-selection rules are detailed in [PROTOCOL.md](PROTOCOL.md).
+## Run
 
-## Tests and experimental setup
-
-All ordinary tests use **one real conditioning frame**, **16 autoregressively generated steps**, **one model draw per initial state**, and a selected action sequence paired with a NOOP/alternative sequence. Both branches use the same initial game state and model random keys. There are 27 distinct scenario types in total; groups overlap and must not be added together as independent scenarios.
-
-| Experiment | Tests | Engine seeds | Attempts | Example checkpoint: PASS / FAIL / UNKNOWN |
-|---|---|---|---:|---:|
-| Diagnostic | All 27 scenario types, including combat and survival | 0 | 27 | 20 / 5 / 2 |
-| Focused mechanics | 14 crafting, resource and persistence cases | 0–9 | 140 | 101 / 39 / 0 |
-| Controlled movement | Free/blocked movement, turn loop, NOOP, table-return | 0–9 | 50 | 40 / 3 / 7 |
-| Table placement | Place a crafting table | 0–9 | 10 | 10 / 0 / 0 |
-| Conditional return | Table placement, six steps away and six back, with departure-only resampling | 0–9 | 10 retained of 22 attempts | 0 / 10 / 0 retained |
-
-The four ordinary groups total **227 attempts / 454 paired branch recordings**. The conditional experiment reuses ten ordinary first samples and generates twelve retries, leaving **239 unique model trajectories / 478 unique branch recordings**. The example HTML includes 498 branch records because it also displays the ten reused samples in the conditional experiment. They are not additional independent trials.
-
-| Mechanics | What is checked |
-|---|---|
-| Movement | Free movement, collisions, facing, screen translation, returning to a location |
-| Crafting | Wood/stone/iron pickaxes, ingredient consumption, missing materials, table and furnace requirements |
-| Gathering | Wood/stone collection, invalid actions, target removal, persistence of gathered resources |
-| Placement | Crafting table/furnace creation, resource cost, blocked or resource-free attempts, object persistence |
-| Combat/survival | Zombie attack, health change, death/termination evidence and sleep pose |
-| Consistency | NOOP inventory stability, tool retention, resource/object persistence and paired-action consequences |
-
-Fixtures use **Craftax-Classic 1.5.0** with controlled inventories, nearby objects, target blocks and enemies. Seed variation changes predefined peripheral terrain, lighting or irrelevant resources while retaining test feasibility. Ten engine seeds are not ten independent model-sampling seeds or entirely unrelated worlds. Future reference-engine state is never supplied to the generated-frame reader.
-
-A scenario is **PASS** if its required mechanics agree with the independently observed generated frames, **FAIL** if a required fact is confidently contradicted, or **UNKNOWN** when the imagery cannot establish an outcome. Independent diagnostic measurements do not automatically change scenario verdicts. Dependent stages can be **NOT_TESTED** when prerequisites fail; inapplicable stages are excluded. Decision coverage is (PASS + FAIL) / attempted cases, including UNKNOWN in the denominator.
-
-The special table-return scenario keeps the exact sequence `PLACE_TABLE → UP × 6 → DOWN × 6`. Conditional sampling retries only when the generated departure reveals a confidently identified obstacle in a newly seen cell, up to 20 total attempts per engine seed. It never retries because a table disappears or the model fails to return. In the example, six selected attempts reached the original location and showed the table missing; four other selected failures did not meet the return prerequisite. Conditional performance is reported separately from unconditional first samples.
-
-## Run on another checkpoint
-
-Python 3.11 and a compatible model adapter are required. Install dependencies from the repository root:
+**Use the existing TinyWMCraft Python environment.** From the repository root, with its environment activated:
 
 ```bash
-uv venv --python 3.11
-uv pip install --python .venv/bin/python -r pyproject.toml
+python -m mechanics_eval --model runs/base/model.npz
 ```
 
-**One command runs all test groups, scores RGB evidence, performs conditional retries and generates the interactive HTML report with all GIFs:**
+Replace the path with the checkpoint you want to test. A checkpoint is required and is not bundled with this feature. **Do not create another virtual environment for this validator.** On a fresh checkout, first set up TinyWMCraft following its own root README, then use the same Python interpreter here.
+
+The command runs all mechanics groups, saves both action branches, scores their generated RGB frames, performs the conditional table-return experiment, and creates a standalone interactive HTML report. By default it exports GIFs for **all** cases. To retain scores but generate fewer GIFs:
 
 ```bash
-.venv/bin/python -m mechanics_eval --model /path/to/model.npz
+python -m mechanics_eval --model path/to/model.npz --gifs fail
 ```
 
-The runner creates a unique directory under `mechanics_eval/runs/`; nothing is overwritten. To choose an output location and export only failed-case GIFs:
-
-```bash
-.venv/bin/python -m mechanics_eval --model /path/to/model.npz --out mechanics_eval/runs/my-checkpoint --gifs fail
-```
-
-Use `--gifs all|fail|unknown|nonpass|none` (default `all`). The GIF setting affects only media: **all verdicts, case details and scores are retained**. With `--gifs none`, the interactive report still works, but no animations are generated.
+Results are written to a new unique, **gitignored** directory, never overwritten:
 
 ```text
 mechanics_eval/runs/<run-id>/
-  run.json                 # checkpoint hash, configuration, completed stages
-  results.json             # aggregate results for this checkpoint
-  evidence/                # saved ordinary trajectories, four groups
-  scores/                  # replayable scoring for each group
-  conditional/             # retry decisions and conditional trajectories
-  report/
-    index.html             # open locally to inspect results
-    gallery.json           # case-level data
-    evidence.zip           # complete local evidence export
-    ...                    # case JSON and selected GIFs
+├── run.json                  # configuration, checkpoint hash, completed stages
+├── results.json              # summary
+├── evidence/                 # paired generated/reference trajectory evidence
+├── scores/                   # RGB-based verdicts
+├── conditional/              # table-return retry evidence and selection
+└── report/
+    ├── index.html            # interactive report: open in a browser
+    ├── gallery.json
+    ├── evidence.zip
+    └── ...                   # all case records and selected GIFs
 ```
 
-Other useful arguments: `--module train` (default), `--seed 0`, `--model-seed N`, `--batch-size 4`, `--max-samples 20`, `--seed-step 1`, and `--native-precision` (default is fp32). Run `python -m mechanics_eval --help` for the complete interface. Model modules must implement the `load_model`, `start` and `step` API (and optionally `heads`) used by `mechanics_eval/rollouts.py`. A checkpoint from a different architecture needs a compatible adapter.
+Use `--out mechanics_eval/runs/my-run` for a chosen *new* output directory. GIF modes are `all`, `fail`, `unknown`, `nonpass`, and `none`; they change **only media**, not tests, verdicts, or denominators. Run `python -m mechanics_eval --help` for all options.
 
-The internal `python -m mechanics_eval.cli` commands remain available for collecting individual groups, rescoring saved RGB, auditing readers and rebuilding the gallery without inference.
+### Other models
 
-## Example result
+- **Another checkpoint of the same TinyWMCraft architecture:** change only `--model`.
+- **A model implementing TinyWMCraft's original `eval.py` interface:** select its importable module with `--module your_adapter`.
+- **Different architecture:** provide a module exposing `load_model(path)`, `start(model, frames, actions)`, and `step(model, state, action, key)`, plus optional `heads`. The current collector also expects `model.win` for provenance. Observations must be Craftax-Classic 63×63 uint8 RGB, with its 17 action IDs.
+
+For example:
+
+```bash
+python -m mechanics_eval --model checkpoints/other.npz --module other_adapter
+```
+
+No training or `eval.py` changes are necessary.
+
+## What is tested?
+
+Ordinary trials use **one real conditioning frame**, **16 autoregressive generated steps**, one model draw per initial state, and selected vs NOOP/alternative actions with matched model keys. Engine seeds change controlled surroundings while preserving the relevant mechanic. The groups overlap; they are **not** disjoint collections of scenarios.
+
+| Group | Test scope | Engine seeds | Attempts |
+|---|---|---|---:|
+| Diagnostic | All 27 scenarios, including combat/survival | 0 | 27 |
+| Focused mechanics | 14 crafting, gathering and persistence scenarios | 0–9 | 140 |
+| Controlled movement | 5 movement/return scenarios | 0–9 | 50 |
+| Table placement | 1 table-placement scenario | 0–9 | 10 |
+| Conditional return | Same place/leave/return route, retries only for objectively blocked departure | 0–9 | 10 retained samples, with at most 20 attempts per seed |
+
+There are **227 ordinary attempts / 454 action-branch recordings**. Conditional sampling is a **separate** experiment. It retries only a confidently blocked newly revealed departure, never a missing table, failure to return, or ambiguous obstacle. See [PROTOCOL.md](PROTOCOL.md) for fixture design, atomic stage definitions, seed controls, prerequisite logic, and eligibility/coverage denominators.
+
+Each scenario is **PASS**, **FAIL**, or **UNKNOWN** from visible evidence. Dependent stages can be **NOT_TESTED** when prerequisites fail, and inapplicable stages are excluded. UNKNOWN cases stay in attempted-case denominators. The model never receives future real-engine states or reference frames to infer generated outcomes.
+
+## Two examples
+
+The repository tracks only these two short illustrative GIFs, **not** the historical 498-case HTML snapshot, per-case JSON, checkpoint, or raw trajectories. Complete interactive reports are generated locally into `mechanics_eval/runs/` when you run validation.
 
 | Wood pickaxe: PASS | Stone pickaxe: FAIL |
 |---|---|
-| ![Successful wood pickaxe crafting](example/media/craft_wood_pickaxe_s0_m0.gif) | ![Failed stone pickaxe crafting](example/media/craft_stone_pickaxe_s0_m0.gif) |
+| ![Wood pickaxe crafting example](example/media/craft_wood_pickaxe_s0_m0.gif) | ![Stone pickaxe crafting failure](example/media/craft_stone_pickaxe_s0_m0.gif) |
 
-[Inspect all cases in the example report](example/index.html). Its HTML runs without a server, but GitHub's source-code preview does not execute it: download the `example/` folder and open `index.html` in a browser.
+These examples were produced with one specific checkpoint and do not predict results for other checkpoints. The omitted historical run reported 20/5/2 diagnostic PASS/FAIL/UNKNOWN and 101/39/0 focused PASS/FAIL/UNKNOWN; these are **historical results, not test expectations**. Its complete evidence remains outside Git. The GIFs include Craftax artwork; attribution is in [example/LICENSE.txt](example/LICENSE.txt).
 
-The example results come from a specific local checkpoint (SHA256 `b4d7b82ba698f1b7aeaab7383c324523bf27bde1aba2fe817745fce38efa0aef`), using CPU, fp32, batch size 4, one-frame conditioning and 16-step rollouts. **The original checkpoint and raw RGB trajectories are not included in Git.** Running a compatible but different checkpoint produces a new experiment, not an exact reproduction of these numbers.
+## Advanced tools and tests
 
-**Candidate, not finalized:** independent generated-image reader validation remains pending.
+The lower-level CLI supports separate collection, scoring, conditional sampling, and offline report exports:
 
-## Limitations and provenance
-
-Only visually supported observations receive decided verdicts. Ambiguous textures, occlusion, camera localization and termination can remain UNKNOWN. The new generated-image pose/identity readers and two borderline camera movements have automated controls and prior inspections, but their independent image-level confirmation is not documented as complete. These limitations do not prevent running the suite.
-
-Tests use controlled fixtures and limited draws; they do not measure long-horizon gameplay, full world consistency or an RL agent's performance. Keep unconditional and conditionally sampled results separate.
-
-Based on [TinyWMCraft](https://github.com/Maharishiva/tinywmcraft) by Fedor Kurdov ([MIT license](../LICENSE)) and [Craftax](https://github.com/MichaelTMatthews/Craftax). The original root README, docs, training code and frozen upstream evaluator remain unchanged.
-
-## Individual stages and offline exports
-
-Run advanced commands from the repository root. The CLI retains `collect`, `score`, `conditional-route`, `export-gallery` / `export-gifs`, `export-review`, `audit-reader`, `audit-missing`, `export-human-review` and `summarize-human-review`. Each subcommand supports `--help`.
-
-```sh
-python -m mechanics_eval.cli collect --suite focused --samples 10 --context 1 --horizon 16 --model path/to/model.npz --module train --fp32 --out mechanics_eval/runs/focused-evidence
-python -m mechanics_eval.cli score --evidence mechanics_eval/runs/focused-evidence --out mechanics_eval/runs/focused-scores
-python -m mechanics_eval.cli export-gallery --evidence mechanics_eval/runs/focused-evidence --results mechanics_eval/runs/focused-scores/results.json --gifs fail --out mechanics_eval/runs/focused-gallery
+```bash
+python -m mechanics_eval.cli --help
+python -m mechanics_eval.cli collect --help
+python -m mechanics_eval.cli score --help
+python -m mechanics_eval.cli export-gallery --help
 ```
 
-`collect` also supports `--scenario NAME ...`, `--seed`, `--model-seed`, `--model-samples`, `--batch-size`, `--module`, `--fp32`, `--context` and `--horizon`. `--context 8` is optional compatibility mode, with seven real NOOP initialization steps; it is not the current one-frame protocol. `score --measurements DIR` can replay matching saved RGB readings; `--conditional-fixed-route` requires the complete six-tile route. `conditional-route` uses `--first-evidence`, optional `--first-measurements`, matching model/module/precision, `--max-samples`, `--seed-step` and a new `--out` directory. Gallery exports accept matching lists `--evidence DIR ... --results JSON ...`; all five GIF modes are supported without inference or rescoring. `export-human-review --runs-root RUN` refers to the single runner output directory (or provide `--results JSON ...` explicitly).
+To run the included regression tests from the upstream environment:
 
-### Reproducibility
-
-The recorded historical example used sampling `STEPS=8`, `CTX_SIGNAL=0.9`. New runs record checkpoint/module/source hashes, backend/package versions, actions, engine/model seeds, batch offsets/indices and sampling settings. Reusing the same checkpoint, backend and batch composition is necessary for identical frames. A different compatible checkpoint is a new experiment. The snapshot preserves the source report hash as provenance; private report paths, raw RGB and checkpoint files are not published.
-
-### Tests and local artifacts
-
-```sh
+```bash
 python -m unittest discover -s mechanics_eval/tests -v
-node mechanics_eval/tests/check_gallery_dom.cjs mechanics_eval/example/index.html
 ```
 
-Tests use real engine controls and synthetic failure/frozen/unknown controls without learning anything. Real-model determinism tests require `MECHANICS_EVAL_CHECKPOINT=/absolute/path/model.npz`. Optional historical-example generated-RGB replay tests require `MECHANICS_EVAL_TEST_RUN=/absolute/path/run`, containing the original example RGB (not arbitrary new-checkpoint outputs), arranged in the runner's `evidence/` and `scores/` layout; an externally archived conditional corpus can additionally supply `scores/conditional-gallery-results.json`. Missing artifacts produce explicit skips; there is no automatic download. An optional separately installed `normuon_adapter` is checked only when available. Test outputs use a temporary directory. Checkpoints and run outputs are ignored, never committed. See [migration verification](MIGRATION.md) for what was actually run, including the limits of the checkpoint smoke test.
+Some tests can optionally replay an archived, full-size historical RGB corpus; set `MECHANICS_EVAL_TEST_RUN` to that local run when available. A model-dependent test can use `MECHANICS_EVAL_CHECKPOINT`. Tests requiring unavailable historical evidence explicitly skip. Generated artifacts belong in the ignored `mechanics_eval/runs/`, never in the tracked example directory.
+
+**Scope and limitations.** Fixed, controlled cases cannot establish general long-horizon playability or RL competence. Some poses, occlusions, camera localization, and termination events are ambiguous in RGB and must not be turned into confident failures. Independent image-level verification of newer generated-image pose/identity readers and two borderline movement cases remains pending. Treat the shipped historical findings as a candidate evaluation, not fully independently validated ground truth.

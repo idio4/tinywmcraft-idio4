@@ -1,1 +1,11 @@
+# Local validation runs and their reports/checkpoints are never committed.
 /runs/
+
+# Retain only the two deliberately curated GIFs and their artwork license.
+# Generated reports, case JSON, and additional media belong in runs/.
+/example/*
+!/example/LICENSE.txt
+!/example/media/
+/example/media/*
+!/example/media/craft_wood_pickaxe_s0_m0.gif
+!/example/media/craft_stone_pickaxe_s0_m0.gif
