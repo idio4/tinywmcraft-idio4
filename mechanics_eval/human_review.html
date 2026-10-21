@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Craftax · Level 1 human review</title>
+<style>
+:root{color-scheme:light;--ink:#182d38;--muted:#536976;--line:#cdd9de;--accent:#006c70;--paper:#f5f7f6}*{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif;color:var(--ink);background:var(--paper)}button,input,select,textarea{font:inherit}button,select,input,textarea{border:1px solid #aebfc7;border-radius:5px;background:white;color:var(--ink);padding:7px}button{cursor:pointer}button:hover{background:#e0eeee}button.primary{background:var(--accent);color:white}button:disabled{opacity:.4;cursor:default}label{display:inline-flex;gap:6px;align-items:center}input[type=checkbox]{accent-color:var(--accent)}header{background:white;border-bottom:1px solid var(--line);padding:14px 22px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}h1{font-size:19px;margin:0 auto 0 0}h2{font-size:20px;margin:4px 0}h3{font-size:15px;margin:12px 0 8px}.subtle{color:var(--muted);font-size:12px}.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}#notice{padding:8px 22px;background:#e4efee;white-space:pre-wrap}main{display:grid;grid-template-columns:320px minmax(0,1fr);height:calc(100vh - 125px)}aside{border-right:1px solid var(--line);display:flex;flex-direction:column;padding:12px;min-height:0;min-width:0}.filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px}.filters select{min-width:0;width:100%}.filters input{grid-column:1/-1;width:100%}#cases{overflow:auto;margin-top:10px}.case{width:100%;text-align:left;margin:0 0 7px;padding:10px;background:white;border:1px solid var(--line)}.case.active{border:2px solid var(--accent);padding:9px}.case strong,.case span{display:block}.pill{font-size:11px;border-radius:4px;background:#edf1f3;padding:2px 5px;display:inline-block!important;margin:3px 3px 0 0}.case small{display:block;color:var(--muted)}article{overflow:auto;padding:16px 24px 70px;min-width:0}.panel{background:white;border:1px solid var(--line);padding:12px;border-radius:7px;margin:10px 0}.viewer{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap}.imagebox{overflow:auto;max-width:100%;flex:none}.imagebox p{margin:3px 0}canvas,img.pixel{image-rendering:pixelated;image-rendering:crisp-edges;background:#111;max-width:none}.smallframe{width:126px;height:126px}.largeframe{display:block}#slider{flex:1;min-width:160px}#timeline{display:flex;overflow:auto;gap:3px}#timeline button{font-size:11px;white-space:nowrap;min-width:56px}#timeline .current{background:var(--accent);color:white}#timeline .relevant{box-shadow:inset 0 -3px #d78c16}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px}pre{font:12px ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere;background:#f4f6f7;padding:10px;max-height:340px;overflow:auto;margin:4px 0}.annotate{border-left:4px solid var(--accent)}.annotate label{display:block;margin:8px 0}.annotate select,.annotate textarea,.annotate input{width:100%;margin-top:4px}.annotate textarea{min-height:65px}#policies .policy{border-bottom:1px solid var(--line);padding:8px 0}.hudstrip{display:flex;gap:8px;overflow:auto}.crop{width:98px;height:98px}.raw{width:7px;height:7px}.surround{width:210px;height:auto}.alert{background:#fff3d8;padding:8px;border-radius:4px}.hidden,[hidden]{display:none!important}a{color:var(--accent)}details{margin:8px 0}summary{cursor:pointer}#question{max-width:100%;width:100%}#summary{font-variant-numeric:tabular-nums}#mode{max-width:180px}#storage{min-width:130px}@media(max-width:850px){main{display:block;height:auto}aside{max-height:420px;border-bottom:1px solid var(--line)}article{overflow:visible;padding:12px}header{padding:10px}#cases{max-height:230px}}
+</style></head><body>
+<header><h1>Craftax <span class="subtle">/ Level 1 human review</span></h1>
+<label>Reviewer <input id="reviewer" placeholder="Your identifier" size="14"></label>
+<select id="mode" aria-label="Review mode"><option value="blind">Blind review</option><option value="diagnostic">Diagnostic mode</option></select>
+<button id="export">Export labels JSON</button><button id="import">Import labels</button><input id="file" type="file" accept="application/json,.json" hidden>
+</header><div id="notice" role="status">Loading local evidence…</div>
+<main><aside><div id="summary"></div><div class="filters">
+<input id="search" aria-label="Search cases" placeholder="Search scenario, seed, mechanic…">
+<select id="group" aria-label="Review group"><option value="">Groups A–D</option><option>A</option><option>B</option><option>C</option><option>D</option><option value="NA">Optional NA audit</option><option value="all">All groups</option></select>
+<select id="progress" aria-label="Review progress"><option value="">Any progress</option><option value="unreviewed">Unreviewed</option><option value="partial">Partial</option><option value="reviewed">Reviewed</option><option value="flagged">Flagged</option></select>
+<select id="status" aria-label="Automatic status"><option value="">Any automatic status</option></select>
+<select id="category" aria-label="Category"><option value="">Any category</option></select>
+<select id="branch" aria-label="Branch"><option value="">Both branches</option><option value="0">Selected</option><option value="1">Alternative</option></select>
+<select id="cohort" aria-label="Cohort"><option value="">All cohorts</option></select>
+</div><div class="subtle" id="groupCounts"></div><details><summary>Progress by category</summary><div id="categoryProgress" class="subtle"></div></details><div id="cases"></div></aside>
+<article id="detail"><div id="empty" class="panel">No items match these filters.</div><section id="content" hidden>
+<div class="bar"><button id="prevCase">← Case</button><button id="nextCase">Case →</button><span id="position" class="subtle"></span></div>
+<h2 id="title"></h2><div id="meta" class="subtle"></div><p id="restriction" class="alert" hidden></p>
+<label for="question">Related physical question — annotate each requested question</label><select id="question"></select>
+<div id="task" class="panel"></div>
+<div class="bar"><button id="prev">← Frame</button><button id="play">Play</button><button id="next">Frame →</button><input id="slider" aria-label="Frame timestep" type="range" min="0" value="0"><strong id="frameLabel"></strong><label>Zoom <select id="zoom"><option>3</option><option selected>4</option><option>6</option><option>8</option></select></label></div>
+<div class="bar"><button id="focus">Relevant event</button><button id="placement">Placement / harvest</button><button id="departure">End departure</button><button id="return">Return observation</button><label><input id="overlay" type="checkbox">Terrain / target overlay</label><label><input id="reference" type="checkbox">Show reference future</label></div>
+<div id="timeline"></div>
+<div class="panel"><div class="viewer">
+<div class="imagebox"><p>Initial real conditioning frame</p><img id="initial" class="pixel smallframe" alt="Real initial conditioning RGB"></div>
+<div class="imagebox"><p>Previous generated observation</p><canvas id="previous" class="largeframe" width="63" height="63" aria-label="Previous generated frame"></canvas></div>
+<div class="imagebox"><p><strong>Generated observation — primary evidence</strong></p><canvas id="generated" class="largeframe" width="63" height="63" aria-label="Generated frame"></canvas></div>
+<div id="refbox" class="imagebox" hidden><p>Real reference — optional; random terrain may differ</p><img id="refimage" class="pixel" width="252" height="252" alt="Optional reference frame"></div>
+</div><p id="terminal" class="subtle"></p></div>
+<div id="objectCompare" class="panel" hidden><h3>Object establishment vs current observation</h3><div class="viewer"><div><p>After placement / harvest (t=1)</p><img id="anchor" class="pixel" width="189" height="189" alt="Generated object establishment frame"></div><div id="crops"></div></div></div>
+<div id="hud" class="panel" hidden></div>
+<div id="revealPanel" class="panel alert">Automatic readings and reference futures are hidden. Record your observed fact first. You may use NEEDS_FURTHER_REVIEW for a provisional blind judgment, then revise after revealing diagnostics. Or explicitly choose diagnostic mode.</div>
+<div class="panel annotate"><h3>Your judgment — saved separately from automatic scores</h3>
+<label>Primary decision<select id="decision"><option value="">Choose a decision…</option><option>CONFIRM_AUTOMATIC</option><option>READER_ERROR</option><option>SCORING_ERROR</option><option>RESOLVABLE_UNKNOWN</option><option>GENUINELY_UNOBSERVABLE</option><option>NEEDS_FURTHER_REVIEW</option></select></label>
+<div class="grid"><label>Human-observed fact (optional)<input id="observed" list="facts" placeholder='present, absent, unreadable, [-6,0], {"wood":1}…'><datalist id="facts"><option value="present"><option value="absent"><option value="unreadable"><option value="legitimate_blocker"><option value="invalid_blocker"><option value="uncertain"><option value="correct"><option value="incorrect"></datalist></label>
+<label>Observation agreement (optional)<select id="agreement"><option value="not_assessed">Not assessed</option><option value="agree">Agree with automatic observation</option><option value="disagree">Disagree with automatic observation</option><option value="unreadable">RGB does not establish it</option></select></label></div>
+<label>Comment<textarea id="comment" placeholder="Explain reader, localization, dependency or observability concerns…"></textarea></label>
+<details id="policyControls" hidden><summary>Optional human verdicts for each scoring policy</summary><p class="subtle">Use these only when you can judge the mechanic under that policy. They never overwrite the automatic score. Without explicit verdicts, reader/scoring errors are not silently converted to PASS or FAIL.</p><div id="policies"></div></details>
+<div class="bar"><button id="save" class="primary">Save judgment</button><button id="saveNext">Save + next question</button><button id="clear">Remove saved judgment</button><span id="saved" class="subtle"></span></div>
+</div><div id="automatic" class="panel" hidden><h3>Independent automatic observations and scoring policies</h3><div id="motion"></div><div id="autoRecords"></div><div id="blocker"></div></div><details><summary>Evidence identity and sources</summary><pre id="provenance"></pre></details>
+</section></article></main>
+<script id="manifest" type="application/json">/*__MANIFEST__*/</script>
+<script>
+'use strict';
+const M=JSON.parse(document.getElementById('manifest').textContent),$=id=>document.getElementById(id);
+const DECISIONS=['CONFIRM_AUTOMATIC','READER_ERROR','SCORING_ERROR','RESOLVABLE_UNKNOWN','GENUINELY_UNOBSERVABLE','NEEDS_FURTHER_REVIEW'];
+const STATUSES=['pass','fail','unknown','not_tested','not_applicable'];
+let labels={},active=null,question=null,t=0,timer=null,visible=[],dirty=false,images=new Map();
+const key=(i,q)=>i.id+':'+q.id,storageKey='craftax-human-review-v1:'+M.manifest_id;
+function text(el,value){el.textContent=value}function pretty(v){return JSON.stringify(v,null,2)}
+function validate(doc){
+ if(doc.schema_version!==1)throw Error('Unsupported human-label schema_version');
+ if(doc.manifest_id!==M.manifest_id)throw Error('Labels belong to a different review manifest');
+ if(!Array.isArray(doc.labels))throw Error('labels must be an array');
+ const found={},errors=[];
+ doc.labels.forEach((l,n)=>{if(!l||typeof l!=='object'||Array.isArray(l)){errors.push('Label '+n+': must be an object');return}const i=M.items.find(x=>x.id===l.item_id),q=i?.questions.find(x=>x.id===l.question_id),k=l.item_id+':'+l.question_id;let reason;
+ if(!q)reason='unknown review item/question ID';else if(found[k])reason='duplicate item/question label';
+ else if(l.evidence_hash!==i.evidence_hash)reason='evidence hash mismatch';
+ else if(l.automatic_records_hash!==q.automatic_records_hash||JSON.stringify(l.scorer_versions)!==JSON.stringify(q.scorer_versions))reason='automatic records/scorer version mismatch';
+ else if(!DECISIONS.includes(l.decision))reason='invalid human decision';
+ else if(!l.original_automatic||Object.keys(l.original_automatic).length!==q.records.length||q.records.some(r=>l.original_automatic[r.id]!==r.automatic.status))reason='original automatic verdict mismatch';else if(typeof l.reviewer!=='string'||!l.reviewer.trim())reason='reviewer identifier required';
+ else if(l.comment!==undefined&&typeof l.comment!=='string')reason='comment must be text';
+ else if(!['agree','disagree','unreadable','not_assessed'].includes(l.observation_agreement||'not_assessed'))reason='invalid observation agreement';
+ else if(!l.human_verdicts||typeof l.human_verdicts!=='object'||Array.isArray(l.human_verdicts)||Object.entries(l.human_verdicts).some(([id,v])=>!q.records.some(r=>r.id===id)||!STATUSES.includes(v)))reason='invalid policy record/verdict';
+ if(reason)errors.push('Label '+n+': '+reason);else found[k]=l;
+ });if(errors.length)throw Error('Incompatible labels; no import performed:\n'+errors.join('\n'));return found;
+}
+function documentLabels(){return {schema_version:1,manifest_id:M.manifest_id,exported_at:new Date().toISOString(),labels:Object.keys(labels).sort().map(k=>labels[k])}}
+function announce(s){text($('notice'),s)}
+function store(){try{localStorage.setItem(storageKey,JSON.stringify(documentLabels()));announce('Saved locally. Export JSON to keep an authoritative backup.');}catch(e){announce('Browser storage unavailable. Your labels remain in this tab; export JSON now.')}}
+function saved(i,q){return labels[key(i,q)]}function questionsFor(i){return $('group').value==='all'?i.questions:$('group').value==='NA'?i.questions.filter(q=>q.groups.includes('NA')):i.questions.filter(q=>q.groups.some(g=>g!=='NA'))}function requiredQuestions(i){return i.questions.filter(q=>q.groups.some(g=>g!=='NA'))}
+function state(i){const qs=requiredQuestions(i).length?requiredQuestions(i):i.questions,n=qs.filter(q=>saved(i,q)).length;return n===0?'unreviewed':n===qs.length?'reviewed':'partial'}
+function flagged(i){return i.questions.some(q=>['READER_ERROR','SCORING_ERROR','NEEDS_FURTHER_REVIEW'].includes(saved(i,q)?.decision))}
+function revealed(){return $('mode').value==='diagnostic'||!!(active&&question&&saved(active,question))}
+function addOptions(id,values){for(const v of [...new Set(values)].sort()){let o=document.createElement('option');o.value=v;o.textContent=v;$(id).append(o)}}
+function cohortText(i){return [...new Set(i.cohorts.map(c=>c==='CONDITIONAL_SELECTED_ELIGIBLE'?'conditional selected':c==='UNCONDITIONAL_FIRST_SAMPLE'?'unconditional first':c.startsWith('REJECTED')?($('mode').value==='diagnostic'?'rejected attempt':'departure control'):c==='RETAINED_AMBIGUOUS'?($('mode').value==='diagnostic'?'retained ambiguous':'departure control'):c==='all-attempt-scores'?'retry experiment':'ordinary'))].join(' / ')}
+function statuses(i){return [...new Set(i.questions.flatMap(q=>q.records.map(r=>r.automatic.status)))]}
+function renderList(){
+ const search=$('search').value.toLowerCase(),group=$('group').value,p=$('progress').value;
+ visible=M.items.filter(i=>(group==='all'||group?group==='all'||i.groups.includes(group):i.groups.some(g=>g!=='NA'))&&
+ (!search||[i.scenario,i.engine_seed,i.model_seed,i.branch_label,i.family,...i.questions.flatMap(q=>q.mechanics)].join(' ').toLowerCase().includes(search))&&
+ (!p||(p==='flagged'?flagged(i):state(i)===p))&&(!$('category').value||i.category===$('category').value)&&
+ (!$('branch').value||String(i.branch)===$('branch').value)&&(!$('cohort').value||i.cohorts.includes($('cohort').value))&&
+ (!$('status').value||statuses(i).includes($('status').value)));
+ $('cases').replaceChildren();visible.forEach(i=>{const b=document.createElement('button');b.className='case'+(active?.id===i.id?' active':'');
+ const title=document.createElement('strong');title.textContent=i.scenario+' · '+i.family;b.append(title);
+ const line=document.createElement('small');line.textContent='engine '+i.engine_seed+' / model '+i.model_seed+' · '+i.branch_label;b.append(line);let cohort=document.createElement('small');cohort.textContent=cohortText(i);b.append(cohort);
+ for(const s of [state(i),...( $('mode').value==='diagnostic'?statuses(i):['automatic hidden']),i.groups.join(' / ')]){const p=document.createElement('span');p.className='pill';p.textContent=s;b.append(p)}
+ b.onclick=()=>selectItem(i);$('cases').append(b)});
+ const n=Object.keys(labels).length;const completed=M.items.filter(i=>state(i)==='reviewed').length;
+ const mainQuestions=M.items.flatMap(i=>i.questions).filter(q=>q.groups.some(g=>g!=='NA')).length;text($('summary'),`${visible.length} / ${M.total_unique_items} visual items · ${completed} reviewed · ${n} saved labels · ${mainQuestions} main questions (${M.unique_questions} including optional)`);
+ text($('groupCounts'),Object.entries(M.groups).map(([g,n])=>g+': '+M.items.filter(i=>i.groups.includes(g)&&state(i)==='reviewed').length+'/'+n).join(' · ')+' reviewed (overlapping groups)');
+ $('categoryProgress').replaceChildren();for(const category of [...new Set(M.items.map(i=>i.category))].sort()){let p=document.createElement('p');let items=M.items.filter(i=>i.category===category);p.textContent=category+': '+items.filter(i=>state(i)==='reviewed').length+' / '+items.length+' visual items reviewed';$('categoryProgress').append(p)}
+ if(!visible.length){$('content').hidden=true;$('empty').hidden=false;active=null;pause();return}
+ if(!active||!visible.some(i=>i.id===active.id))selectItem(visible[0]);
+}
+function pause(){if(timer)clearInterval(timer);timer=null;text($('play'),'Play')}
+function selectItem(i){pause();active=i;$('content').hidden=false;$('empty').hidden=true;
+ text($('title'),i.scenario+' · '+i.family);text($('meta'),`engine seed ${i.engine_seed} · model seed ${i.model_seed} · ${i.branch_label} · ${i.scope} · ${i.category} · ${cohortText(i)}`);
+ $('restriction').hidden=!i.trajectory.restriction;text($('restriction'),i.trajectory.restriction||'');
+ const qs=questionsFor(i);$('question').replaceChildren();qs.forEach((q,n)=>{let o=document.createElement('option');o.value=q.id;o.textContent=(saved(i,q)?'✓ ':'○ ')+q.mechanics.join(' / ')+(q.groups.every(g=>g==='NA')?' (optional applicability)':'');$('question').append(o)});
+ $('initial').src=i.trajectory.frames[0].generated;$('anchor').src=i.trajectory.frames[Math.min(1,i.trajectory.frames.length-1)].generated;
+ $('slider').max=i.trajectory.frames.length-1;$('timeline').replaceChildren();
+ i.trajectory.frames.forEach(f=>{let b=document.createElement('button');b.textContent=f.timestep+': '+f.action_name;b.title=f.action_name;b.onclick=()=>setFrame(f.timestep);$('timeline').append(b)});
+ selectQuestion(qs[0]);renderList();text($('position'),`${visible.findIndex(x=>x.id===i.id)+1} / ${visible.length}`);
+}
+const rules={movement:'Inspect requested actions against movement and visible collisions in the generated world. Track terrain landmarks; a different map from the real future is allowed.',facing_direction:'Determine the player facing direction from visible sprite evidence. Movement and facing are separate facts.',
+ 'object.crafting_table':'Determine whether a table was created and remains at its original world-relative location when visible. Compare establishment with the current observation; loss of localization does not prove disappearance.',
+ 'object.furnace':'Determine whether the furnace persists at its original location, accounting for observed player movement.',
+ 'object.harvested_resource':'Determine whether the harvested resource stays absent at its original location when observable. Entities may obscure terrain.',
+ departure_eligibility:'Using only placement and the six departure steps: is a stable obstacle in newly revealed terrain positively established? A frozen move on free terrain, wrong movement, changed previously visible terrain, or unreadable evidence must not justify a retry.'};
+function selectQuestion(q){question=q;$('question').value=q.id;const l=saved(active,q);
+ text($('task'),rules[active.family]||'Judge the claimed mechanic from generated RGB and the action sequence. Distinguish an incorrect visual reading from an incorrect scoring rule. Do not infer hidden state.');
+ const targets=[...new Set(q.records.flatMap(r=>(r.automatic.facts||[]).map(f=>JSON.stringify({field:f.field,timestep:f.timestep??r.automatic.milestone??r.automatic.timestep??1,expected:f.expected}))))];if(targets.length){let d=document.createElement('details'),summary=document.createElement('summary'),p=document.createElement('pre');summary.textContent='Task target values (rubric, not observed values)';p.textContent=targets.join('\n');d.append(summary,p);$('task').append(d)}
+ $('decision').value=l?.decision||'';$('observed').value=l?.human_observed===undefined||l?.human_observed===null?'':typeof l.human_observed==='string'?l.human_observed:JSON.stringify(l.human_observed);
+ $('agreement').value=l?.observation_agreement||'not_assessed';$('comment').value=l?.comment||'';
+ if(l&&!$('reviewer').value)$('reviewer').value=l.reviewer;
+ text($('saved'),l?'Saved by '+l.reviewer+' · '+l.reviewed_at:'Not reviewed. Displaying this question creates no label.');
+ $('reference').checked=false;$('overlay').checked=false;renderAutomatic();setFrame(q.focus_timestep);
+ text($('provenance'),pretty({item_id:active.id,evidence_hash:active.evidence_hash,question_id:q.id,automatic_records_hash:q.automatic_records_hash,scorer_versions:q.scorer_versions,source:active.trajectory.source,context_length:active.trajectory.context_length,omitted_post_terminal_padding:active.trajectory.omitted_post_terminal_padding}));
+}
+function fetchImage(path){if(images.has(path))return images.get(path);let p=new Promise((resolve,reject)=>{let im=new Image();im.onload=()=>resolve(im);im.onerror=()=>{announce('Missing local visual evidence: '+path);reject(Error(path))};im.src=path});images.set(path,p);return p}
+async function drawFrame(canvas,path,frame,previous=false){const im=await fetchImage(path);if(!active||active.trajectory.frames[previous?Math.max(0,t-1):t].generated!==path)return;
+ const c=canvas.getContext('2d');c.clearRect(0,0,63,63);c.imageSmoothingEnabled=false;c.drawImage(im,0,0);
+ if($('overlay').checked&&revealed()){
+  c.lineWidth=.35;const step=active.trajectory.frames[t].motion?.adjacent;for(const p of step?.support||[]){const [r,col]=previous?p.previous:p.current;c.strokeStyle='#23efff';c.strokeRect(col*7+.5,r*7+.5,6,6)}
+  const target=question.visuals[String(previous?Math.max(0,t-1):t)]?.target;const point=target?.target_coordinate;
+  if(point&&target.target_visibility==='visible'&&target.localization_status==='known'){c.strokeStyle='#ffec00';c.lineWidth=.65;c.strokeRect(point[1]*7+.5,point[0]*7+.5,6,6)}
+ }
+}
+function setFrame(value){if(!active)return;t=Math.max(0,Math.min(Number(value),active.trajectory.frames.length-1));$('slider').value=t;
+ const f=active.trajectory.frames[t],prev=active.trajectory.frames[Math.max(0,t-1)];
+ text($('frameLabel'),`t=${t} · ${f.action_name}`);for(const canvas of [$('generated'),$('previous')]){canvas.style.width=(Number($('zoom').value)*63)+'px';canvas.style.height=canvas.style.width}
+ drawFrame($('generated'),f.generated,f);drawFrame($('previous'),prev.generated,prev,true);
+ $('refbox').hidden=!revealed()||!$('reference').checked;$('refimage').src=f.reference;
+ text($('terminal'),t===0?'Real conditioning observation; NOOP is the incoming-action marker.':f.real_terminal?'Real episode terminal frame. No post-terminal generated padding is shown.':'Action shown produced this generated frame.');
+ [...$('timeline').children].forEach((b,n)=>{b.className=(n===t?'current ':'')+(question.times.includes(n)?'relevant':'')});
+ $('prev').disabled=t===0;$('next').disabled=t===active.trajectory.frames.length-1;
+ $('objectCompare').hidden=!active.family.startsWith('object.');renderCrops();
+ if(revealed())text($('motion'),pretty({requested_action:f.action_name,motion:f.motion,expected_and_observed_facts:question.records.flatMap(r=>(r.automatic.facts||[]).filter(f=>Number(f.timestep??r.automatic.milestone??r.automatic.timestep??1)===t))}));
+}
+function cropImage(path,cls,alt){let im=document.createElement('img');im.src=path;im.className='pixel '+cls;im.alt=alt;return im}
+function renderCrops(){
+ $('crops').replaceChildren();$('hud').replaceChildren();$('hud').hidden=true;
+ if(!revealed()){text($('crops'),'Target coordinates/crops are hidden until an initial judgment.');return}
+ const v=question.visuals[String(t)]||{};
+ if(v.target||v.screen_coordinate){const p=document.createElement('p');p.textContent=v.target?'Target: '+v.target.target_visibility+' · localization '+v.target.localization_status:'Explicit screen coordinate '+v.screen_coordinate;$('crops').append(p)}
+ for(const k of ['target_crop','surround_crop'])if(v[k])$('crops').append(cropImage(v[k],k==='target_crop'?'crop':'surround','Lossless '+k));
+ if(v.target&&!v.target_crop){const p=document.createElement('p');p.className='alert';p.textContent='No target crop: '+(v.target.tile_reader_reason||v.target.reason||'position not established');$('crops').append(p)}
+ if(v.target){let p=document.createElement('pre');p.textContent=pretty(v.target);$('crops').append(p)}
+ const fields=[...new Set(Object.values(question.visuals).flatMap(x=>Object.keys(x.hud||{})))];
+ for(const field of fields){$('hud').hidden=false;let h=document.createElement('h3');h.textContent=field+' · lossless HUD strip (before / after / persistence)';$('hud').append(h);let strip=document.createElement('div');strip.className='hudstrip';
+  for(const f of active.trajectory.frames){const cell=question.visuals[String(f.timestep)]?.hud?.[field];if(!cell)continue;let d=document.createElement('div'),p=document.createElement('p');p.textContent='t='+f.timestep;d.append(p,cropImage(cell.path,'crop','HUD '+field+' t='+f.timestep),cropImage(cell.path,'raw','Original 7px HUD crop'));d.onclick=()=>setFrame(f.timestep);strip.append(d)}
+  $('hud').append(strip);let p=document.createElement('pre');p.textContent=pretty(v.hud?.[field]);$('hud').append(p);
+ }
+}
+function renderAutomatic(){
+ const show=revealed();$('automatic').hidden=!show;$('revealPanel').hidden=show;$('policyControls').hidden=!show;
+ $('reference').disabled=!show;$('overlay').disabled=!show;$('agreement').disabled=!show;
+ $('autoRecords').replaceChildren();$('policies').replaceChildren();$('blocker').replaceChildren();if(!show)return;
+ for(const r of question.records){let d=document.createElement('details'),s=document.createElement('summary'),p=document.createElement('pre');s.textContent=(r.automatic.name||r.automatic.mechanic)+' · '+r.automatic.status+' · '+r.associations.map(a=>a.cohort+' / '+(a.required?'required':'diagnostic')).join(' | ');p.textContent=pretty(r);d.append(s,p);$('autoRecords').append(d);
+  if(STATUSES.includes(r.automatic.status)){let div=document.createElement('div');div.className='policy';let label=document.createElement('label');label.textContent=s.textContent;let select=document.createElement('select');select.dataset.record=r.id;let blank=document.createElement('option');blank.value='';blank.textContent='No human verdict';select.append(blank);for(const status of STATUSES){let o=document.createElement('option');o.value=status;o.textContent=status.toUpperCase();select.append(o)}select.value=saved(active,question)?.human_verdicts?.[r.id]||'';label.append(select);div.append(label);$('policies').append(div)}
+  const e=r.automatic.eligibility;if(e){let h=document.createElement('h3');h.textContent='Departure evidence: first appearance → stability → collision';$('blocker').append(h);
+   for(const witness of question.blocker_visuals||[]){let strip=document.createElement('div');strip.className='hudstrip';for(const h of witness.history){let d=document.createElement('div'),p=document.createElement('p');p.textContent='t='+h.timestep+' cell '+h.screen_coordinate;d.append(p,cropImage(h.crop,'crop','Blocking tile stability observation'));d.onclick=()=>setFrame(h.timestep);strip.append(d)}$('blocker').append(strip)}
+   for(const w of e.witnesses||[]){let pre=document.createElement('pre');pre.textContent=pretty({world_relative_coordinate:w.world_relative_coordinate,collision_timestep:w.timestep,measured_step:w.measured_step,reason:w.reason,visibility_history:w.visibility_history});$('blocker').append(pre);let bar=document.createElement('div');bar.className='bar';for(const obs of w.visibility_history||[]){let button=document.createElement('button');button.textContent='t='+obs.timestep+' cell '+obs.screen_coordinate;button.onclick=()=>setFrame(obs.timestep);bar.append(button)}$('blocker').append(bar)}
+  }
+ }
+}
+function parseObserved(s){if(!s.trim())return null;try{return JSON.parse(s)}catch{return s}}
+function save(){
+ if(!$('reviewer').value.trim()){announce('Enter your reviewer identifier before saving.');$('reviewer').focus();return false}
+ if(!DECISIONS.includes($('decision').value)){announce('Choose a primary review decision.');return false}
+ const prior=saved(active,question),mode=$('mode').value,human_verdicts={};document.querySelectorAll('#policies select').forEach(s=>{if(s.value)human_verdicts[s.dataset.record]=s.value});
+ const l={item_id:active.id,question_id:question.id,evidence_hash:active.evidence_hash,automatic_records_hash:question.automatic_records_hash,scorer_versions:question.scorer_versions,reviewer:$('reviewer').value.trim(),decision:$('decision').value,human_observed:parseObserved($('observed').value),observation_agreement:$('agreement').value,comment:$('comment').value,human_verdicts,original_automatic:Object.fromEntries(question.records.map(r=>[r.id,r.automatic.status])),reviewed_at:new Date().toISOString(),mode};
+ l.initial_judgment=prior?.initial_judgment||{decision:l.decision,human_observed:l.human_observed,comment:l.comment,mode,automatic_hidden:!revealed(),reviewed_at:l.reviewed_at};
+ labels[key(active,question)]=l;dirty=true;store();renderAutomatic();setFrame(t);renderList();text($('saved'),'Saved by '+l.reviewer+' · '+l.reviewed_at);return true;
+}
+function nextCase(delta){if(!active)return;let n=visible.findIndex(i=>i.id===active.id)+delta;if(visible[n])selectItem(visible[n])}
+function nextQuestion(){const qs=questionsFor(active),n=qs.findIndex(q=>q.id===question.id);if(qs[n+1])selectQuestion(qs[n+1]);else nextCase(1)}
+$('question').onchange=()=>{pause();selectQuestion(active.questions.find(q=>q.id===$('question').value))};
+for(const id of ['search','progress','status','category','branch','cohort'])$(id).addEventListener(id==='search'?'input':'change',renderList);
+$('group').onchange=()=>{renderList();if(active)selectItem(active)};
+$('mode').onchange=()=>{renderAutomatic();setFrame(t);renderList();announce($('mode').value==='diagnostic'?'Diagnostic mode: automatic readings visible; this mode is recorded with labels.':'Blind mode: automatic evidence is hidden until a saved initial judgment. Navigation status labels stay hidden.')};
+$('prevCase').onclick=()=>nextCase(-1);$('nextCase').onclick=()=>nextCase(1);$('prev').onclick=()=>setFrame(t-1);$('next').onclick=()=>setFrame(t+1);$('slider').oninput=()=>setFrame($('slider').value);
+$('play').onclick=()=>{if(timer){pause();return}text($('play'),'Pause');timer=setInterval(()=>{if(t>=active.trajectory.frames.length-1){pause();return}setFrame(t+1)},350)};
+$('focus').onclick=()=>setFrame(question.focus_timestep);$('placement').onclick=()=>setFrame(1);
+$('departure').onclick=()=>{let fs=active.trajectory.frames.filter(f=>f.action===3);setFrame(fs.length?fs[fs.length-1].timestep:question.focus_timestep)};
+$('return').onclick=()=>{let fs=active.trajectory.frames.filter(f=>f.action===4);setFrame(fs.length?fs[fs.length-1].timestep:question.focus_timestep)};
+for(const id of ['zoom','overlay','reference'])$(id).onchange=()=>setFrame(t);
+$('save').onclick=save;$('saveNext').onclick=()=>{const before=key(active,question);if(save()&&active&&key(active,question)===before)nextQuestion()};$('clear').onclick=()=>{if(!saved(active,question))return;if(!confirm('Remove this saved question judgment?'))return;delete labels[key(active,question)];dirty=true;store();selectQuestion(question);renderList()};
+$('export').onclick=()=>{const blob=new Blob([JSON.stringify(documentLabels(),null,2)+'\n'],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='human_labels.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);dirty=false;announce('Exported human_labels.json. Keep this file; it is the authoritative review artifact.')};
+$('import').onclick=()=>$('file').click();$('file').onchange=async()=>{const file=$('file').files[0];if(!file)return;try{const doc=JSON.parse(await file.text()),next=validate(doc);if(Object.keys(labels).length&&!confirm('Replace current progress with '+Object.keys(next).length+' imported labels? Export a backup first.'))return;labels=next;dirty=false;store();renderList();if(question)selectQuestion(question);announce('Imported '+Object.keys(next).length+' validated question labels. '+(M.unique_questions-Object.keys(next).length)+' questions remain unreviewed.')}catch(e){announce(e.message)}finally{$('file').value=''}};
+document.addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)||e.ctrlKey||e.metaKey||e.altKey)return;if(e.key==='ArrowLeft'){e.preventDefault();setFrame(t-1)}if(e.key==='ArrowRight'){e.preventDefault();setFrame(t+1)}if(e.code==='Space'){e.preventDefault();$('play').click()}if(e.key==='[')nextCase(-1);if(e.key===']')nextCase(1)});
+window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='Export labels JSON to preserve your review.'}});
+window.Review={manifest:M,validate,documentLabels,selectItem,selectQuestion,setFrame,get state(){return {active:active?.id,question:question?.id,t,visible:visible.length,labels:documentLabels().labels}}};
+addOptions('status',M.items.flatMap(statuses));addOptions('category',M.items.map(i=>i.category));addOptions('cohort',M.items.flatMap(i=>i.cohorts));
+try{const stored=localStorage.getItem(storageKey);if(stored)labels=validate(JSON.parse(stored))}catch(e){announce('Local progress could not be restored: '+e.message+' Import your labels JSON instead.')}
+renderList();announce((M.full_export?'Complete current export':'SMOKE SUBSET — not the complete review set')+' · '+M.total_unique_items+' unique visual items / '+M.unique_questions+' questions. Generated RGB is primary. No human labels are prefilled. Export JSON to save progress.');
+</script></body></html>
