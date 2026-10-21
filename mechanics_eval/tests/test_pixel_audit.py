@@ -1,7 +1,7 @@
 """Controls for the independent audit, which never changes benchmark scores."""
 import unittest
 import numpy as np
-from mechanics_eval.pixel_audit import align
+from mechanics_eval.audit.pixels import align
 
 
 class PixelAuditTests(unittest.TestCase):

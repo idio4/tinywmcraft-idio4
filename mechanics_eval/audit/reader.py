@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw
-from .evidence import dump_json, load_case
-from .visual import HUD, hud_patch
+from ..evidence import dump_json, load_case
+from ..visual import HUD, hud_patch
 
 
 def confusion(records):

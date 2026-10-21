@@ -78,15 +78,35 @@ The repository tracks only these two short illustrative GIFs, **not** the histor
 
 These examples were produced with one specific checkpoint and do not predict results for other checkpoints. The omitted historical run reported 20/5/2 diagnostic PASS/FAIL/UNKNOWN and 101/39/0 focused PASS/FAIL/UNKNOWN; these are **historical results, not test expectations**. Its complete evidence remains outside Git. The GIFs include Craftax artwork; attribution is in [example/LICENSE.txt](example/LICENSE.txt).
 
+## Project structure
+
+The optional validator remains isolated from upstream TinyWMCraft. The repository's original `train.py`, `eval.py`, `pyproject.toml`, and `docs/` are unchanged.
+
+```text
+mechanics_eval/
+├── __main__.py, runner.py, cli.py    # One-command and advanced entry points
+├── scenarios.py, focused.py         # Controlled Craftax engine fixtures
+├── rollouts.py, evidence.py         # Model interface and recorded trajectories
+├── reader_v2.py, atomic.py, ...     # RGB readers, mechanics rules and scoring
+├── gallery.py, gifs.py              # Full local HTML/GIF report generation
+├── audit/                            # Optional reader, missing-fact and human audits
+├── tests/                            # Regression and fixture controls
+├── example/media/                   # Two curated GIFs, no large report snapshot
+└── runs/                            # Gitignored generated evidence and reports
+```
+
+**Human review is optional, not outdated.** `audit/human.py` and its HTML template are for independent annotation of generated evidence and disagreement analysis. They do **not** run during regular validation or silently modify PASS/FAIL/UNKNOWN scores. Other optional reader, missing-observation, and pixel checks live in the same folder. See [audit/README.md](audit/README.md).
+
 ## Advanced tools and tests
 
-The lower-level CLI supports separate collection, scoring, conditional sampling, and offline report exports:
+The lower-level CLI supports separate collection, scoring, conditional sampling, offline report exports, and optional audits:
 
 ```bash
 python -m mechanics_eval.cli --help
 python -m mechanics_eval.cli collect --help
 python -m mechanics_eval.cli score --help
 python -m mechanics_eval.cli export-gallery --help
+python -m mechanics_eval.cli export-human-review --help
 ```
 
 To run the included regression tests from the upstream environment:

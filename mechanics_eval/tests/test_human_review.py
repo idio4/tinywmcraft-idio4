@@ -8,7 +8,7 @@ import unittest
 import numpy as np
 from PIL import Image
 from mechanics_eval.evidence import digest,dump_json
-from mechanics_eval.human_review import build_items,export_review,validate_labels,summarize_review
+from mechanics_eval.audit.human import build_items,export_review,validate_labels,summarize_review
 
 
 def stage(name,status='unknown',field='relative_displacement',t=2,**extra):

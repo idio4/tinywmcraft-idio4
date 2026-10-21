@@ -135,16 +135,16 @@ def main():
     g.add_argument('--gifs', choices=('all','fail','unknown','nonpass','none'), default='all', help='Media only; every card, score and denominator is always exported')
     args = p.parse_args()
     if args.command=='export-human-review':
-        from mechanics_eval.human_review import export_review
+        from mechanics_eval.audit.human import export_review
         report=export_review(args.out,args.results,args.runs_root,args.fail_limit,args.pass_limit,args.smoke_limit)
         print(json.dumps({'index':str((args.out/'index.html').resolve()),'groups':report['groups'],
                           'unique_items':report['total_unique_items'],'unique_questions':report['unique_questions']},indent=2))
     elif args.command=='summarize-human-review':
-        from mechanics_eval.human_review import summarize_review
+        from mechanics_eval.audit.human import summarize_review
         report=summarize_review(args.manifest,args.labels,args.out)
         print(json.dumps({k:report[k] for k in ('total_unique_items','fully_reviewed_items','reviewed_questions','unreviewed_questions')},indent=2))
     elif args.command=='audit-missing':
-        from mechanics_eval.unknown_audit import audit
+        from mechanics_eval.audit.missing import audit
         summary=audit(args.results,args.out)
         print(json.dumps({k:v for k,v in summary.items() if k!='tracked_table_none'},indent=2))
     elif args.command=='conditional-route':
@@ -158,10 +158,10 @@ def main():
         from mechanics_eval.gifs import export_gifs
         print(export_gifs(args.evidence, args.results, args.out, args.gifs))
     elif args.command == 'export-review':
-        from mechanics_eval.audit import export_review
+        from mechanics_eval.audit.reader import export_review
         print(export_review(args.evidence,args.out))
     elif args.command == 'audit-reader':
-        from mechanics_eval.audit import validate_labels
+        from mechanics_eval.audit.reader import validate_labels
         from mechanics_eval.reader_v2 import ReaderV2
         if args.out.exists():
             p.error('Use a new audit output file')

@@ -3,9 +3,9 @@ from collections import Counter
 import json
 from pathlib import Path
 from PIL import Image
-from .evidence import load_case,dump_json,digest
-from .motion import object_observation
-from .visual import HUD,hud_patch
+from ..evidence import load_case,dump_json,digest
+from ..motion import object_observation
+from ..visual import HUD,hud_patch
 
 
 def diagnose(raw,stage,fact,t,readings,actions):
@@ -62,7 +62,7 @@ def diagnose(raw,stage,fact,t,readings,actions):
                         measured_displacement=raw.get('measured_displacement'),route_comparability=raw.get('route_comparability'))
     elif 'displacement' in field or field=='legal_single_step':
         if motion is None:
-            from .motion import track
+            from ..motion import track
             motion=track(readings[:t+1])[t]
             evidence['localization_recomputed_for_audit']=True
         evidence.update(component='motion_tracker',root_cause=(motion or {}).get('reason') or reason,observability='localization_uncertain',motion=motion)

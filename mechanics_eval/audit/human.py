@@ -9,10 +9,10 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from .evidence import digest, dump_json, load_case
-from .gifs import ACTION_NAMES
-from .motion import track, object_observation
-from .visual import HUD, hud_patch
+from ..evidence import digest, dump_json, load_case
+from ..gifs import ACTION_NAMES
+from ..motion import track, object_observation
+from ..visual import HUD, hud_patch
 
 SCHEMA = 1
 DECISIONS = ('CONFIRM_AUTOMATIC','READER_ERROR','SCORING_ERROR','RESOLVABLE_UNKNOWN',
@@ -496,7 +496,7 @@ Automatic scores are immutable. Groups and policy strata overlap; do not add the
 After reviewing, run from the repository root (replace the labels path and use a fresh report directory):
 
 ```
-.venv/bin/python -m mechanics_eval.cli summarize-human-review \\
+python -m mechanics_eval.cli summarize-human-review \\
   --manifest mechanics_eval/runs/human-review-level1/review_manifest.json \\
   --labels /absolute/path/to/human_labels.json \\
   --out mechanics_eval/runs/human-review-level1/report
