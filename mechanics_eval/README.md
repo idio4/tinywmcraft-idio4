@@ -20,6 +20,8 @@ The command runs all mechanics groups, saves both action branches, scores their 
 python -m mechanics_eval --model path/to/model.npz --gifs fail
 ```
 
+Stages share one model and compiled engines in a single Python process. Collection progress groups seeds and updates after each batch at most every 30 seconds, plus completion; conditional progress summarizes each completed seed. Detailed sampling and retry decisions remain in the saved records. Batch sizes and random-key schedules are unchanged. Reports retain individual evidence files without generating a ZIP archive.
+
 Results are written to a new unique, **gitignored** directory, never overwritten:
 
 ```text
@@ -32,11 +34,23 @@ mechanics_eval/runs/<run-id>/
 └── report/
     ├── index.html            # interactive report: open in a browser
     ├── gallery.json
-    ├── evidence.zip
     └── ...                   # all case records and selected GIFs
 ```
 
 Use `--out mechanics_eval/runs/my-run` for a chosen *new* output directory. GIF modes are `all`, `fail`, `unknown`, `nonpass`, and `none`; they change **only media**, not tests, verdicts, or denominators. Run `python -m mechanics_eval --help` for all options.
+
+### Seeds and repeated runs
+
+Seeds are configurable: `--seed` defaults to `0` and sets the engine seed root; `--model-seed` defaults to the value of `--seed` and sets the model sampling seed root. Repeating the same checkpoint with the same settings uses the same random keys, aiming to reproduce the same results.
+
+To get new model samples from the same checkpoint while keeping the engine scenarios identical, change only `--model-seed`:
+
+```bash
+python -m mechanics_eval --model model.npz --model-seed 42
+python -m mechanics_eval --model model.npz --model-seed 43
+```
+
+Each command creates a new output directory and saves its seed configuration in `run.json`. For reproduction, keep the checkpoint, seeds, batch size, precision, model adapter, and software/backend environment the same; changing batch size also changes the model random-key assignment.
 
 ### Other models
 
@@ -99,22 +113,271 @@ mechanics_eval/
 
 ## Advanced tools and tests
 
-The lower-level CLI supports separate collection, scoring, conditional sampling, offline report exports, and optional audits:
+Run these commands from the repository root in the existing TinyWMCraft environment. Paths below are examples: replace `mechanics_eval/runs/example-run` with an existing run for read-only inputs, and choose fresh output paths. Separate CLI invocations each start a new process; model and compiled-engine reuse applies to the full one-command runner.
+
+### Full evaluation options
+
+```bash
+python -m mechanics_eval --help
+python -m mechanics_eval --model model.npz --seed 0 --model-seed 42 \
+  --gifs fail --out mechanics_eval/runs/model-seed-42
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--model PATH` | Required | Existing compatible checkpoint; never modified. |
+| `--module NAME` | `train` | Importable model adapter. |
+| `--out DIR` | Unique timestamped directory under `mechanics_eval/runs/` | New run directory; existing paths are rejected. |
+| `--gifs MODE` | `all` | `all`, `fail`, `unknown`, `nonpass` (FAIL and UNKNOWN), or `none`; affects media only. |
+| `--seed N` | `0` | Nonnegative engine seed root; diagnostic uses this seed, other ordinary groups use ten consecutive seeds. |
+| `--model-seed N` | Value of `--seed` | Nonnegative model sampling seed root; change this alone for different draws on the same engine scenarios. |
+| `--batch-size N` | `4` | Positive ordinary collection batch size. Changing it changes model random-key assignment and potentially samples. Conditional retries remain batch size 1. |
+| `--max-samples N` | `20` | Conditional attempt budget per engine seed, including the reused first attempt; conditional sampling requires `1 <= N < 2**32`. |
+| `--seed-step N` | `1` | Positive odd increment less than `2**32` between conditional model sampling seeds, wrapping modulo `2**32`. |
+| `--fp32` | Enabled | Use FP32 sampling. |
+| `--native-precision` | Disabled | Use the adapter's default precision instead of forcing FP32. |
+| `-h`, `--help` | — | Show help without running evaluation. Available on all commands below too. |
+
+The runner fixes context to 1 frame, horizon to 16 steps, and the cohort sizes described above. Custom scenarios, context lengths, horizons, and sample counts use `collect` instead and do not constitute the fixed Level 1 design.
+
+### Command reference
 
 ```bash
 python -m mechanics_eval.cli --help
 python -m mechanics_eval.cli collect --help
-python -m mechanics_eval.cli score --help
-python -m mechanics_eval.cli export-gallery --help
-python -m mechanics_eval.cli export-human-review --help
 ```
 
-To run the included regression tests from the upstream environment:
+Replace `collect` in the second command with any command in this table to inspect its help:
+
+| Command | Purpose | Model inference? |
+|---|---|---|
+| `collect` | Generate paired reference/model trajectories. | Yes |
+| `score` | Score saved RGB evidence or replay matching cached measurements. | No |
+| `conditional-route` | Reuse first table-return samples and generate permitted retries. | Only when retries are needed |
+| `export-gallery` | Export an interactive HTML report with optional GIFs. | No |
+| `export-gifs` | Alias for `export-gallery`, with identical arguments. | No |
+| `export-review` | Export a small reader-labeling sheet and blank labels. | No |
+| `audit-reader` | Compare reader outputs against manually entered labels. | No |
+| `audit-missing` | Diagnose missing or UNKNOWN observations. | No |
+| `export-human-review` | Export an interactive human annotation workflow. | No |
+| `summarize-human-review` | Summarize saved human annotations and disagreements. | No |
+
+### Collect custom evidence
+
+```bash
+python -m mechanics_eval.cli collect --model model.npz --fp32 \
+  --suite existing --scenario move_free move_blocked \
+  --samples 10 --model-samples 1 --seed 0 --model-seed 42 \
+  --context 1 --horizon 16 --batch-size 4 \
+  --out mechanics_eval/runs/custom-evidence
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--model PATH` | Required | Existing checkpoint. |
+| `--module NAME` | `train` | Model adapter module. |
+| `--fp32` | Disabled | Force FP32; omit for adapter-native precision. Unlike the full runner, standalone collection does not force FP32 by default. |
+| `--suite NAME` | `focused` | `focused` uses the focused scenario subset and varied surroundings; `existing` uses the complete diagnostic catalog. |
+| `--scenario NAME [NAME ...]` | All scenarios in the suite | Filter by scenario name, such as `move_free`, `move_blocked`, `craft_wood_pickaxe`, or `table_leave_return`. Names must belong to the chosen suite; see `scenarios.py` and `focused.py`. |
+| `--samples N` | `10` | Positive engine seeds per scenario, starting at `--seed`. |
+| `--model-samples N` | `1` | Positive model draws per scenario/engine-seed pair. |
+| `--seed N` | `0` | Nonnegative engine seed root. |
+| `--model-seed N` | Value of `--seed` | Nonnegative model sampling seed root. |
+| `--context N` | `1` | Number of real conditioning frames, from 1 through 24. |
+| `--horizon N` | `16` | Generated rollout length, from 1 through 128; reference trajectories stop at terminal frames. |
+| `--batch-size N` | `4` | Positive number of cases per model batch; affects model random keys. |
+| `--out DIR` | Required | New evidence directory. |
+
+Collection records both action branches, metadata, sampling/replay settings, and `trajectory.npz` in each case directory, plus a collection `manifest.json`. Frame-by-frame rollout and reward/done heads use the adapter interface described above.
+
+### Score or rescore saved evidence
+
+```bash
+python -m mechanics_eval.cli score \
+  --evidence mechanics_eval/runs/custom-evidence \
+  --out mechanics_eval/runs/custom-scores
+```
+
+Required options are `--evidence DIR` (a complete collection) and `--out DIR` (a new score directory). Scoring writes `results.json`, `samples.csv`, `summary.md`, and per-case measurements and diagnostics without generating new model frames.
+
+Optional `--measurements DIR` replays readings from a matching score directory or reading cache. Reader profiles and evidence-manifest hashes must match; this is not a cache for a different collection:
+
+```bash
+python -m mechanics_eval.cli score \
+  --evidence mechanics_eval/runs/custom-evidence \
+  --measurements mechanics_eval/runs/custom-scores \
+  --out mechanics_eval/runs/custom-scores-replayed
+```
+
+Optional `--conditional-fixed-route` requires the complete six-tile departure/return route for conditional scoring. Ordinary scoring omits it.
+
+### Conditional table-return sampling
+
+```bash
+python -m mechanics_eval.cli conditional-route \
+  --first-evidence mechanics_eval/runs/example-run/evidence/controlled \
+  --first-measurements mechanics_eval/runs/example-run/scores/controlled \
+  --model model.npz --module train --fp32 \
+  --max-samples 20 --seed-step 1 \
+  --out mechanics_eval/runs/conditional-new
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--first-evidence DIR` | Required | Complete collection containing exactly one first `table_leave_return` sample per engine seed. |
+| `--first-measurements DIR` | None | Matching first-sample score directory; omit to reread the saved RGB. |
+| `--model PATH` | Required | Same checkpoint as the first samples, verified by hash. |
+| `--module NAME` | `train` | Same adapter as the first samples; its source hash is checked when loading for retries. |
+| `--fp32` | Disabled | Must match the first collection's precision setting. Use it for evidence from the default full runner. |
+| `--max-samples N` | `20` | Total attempts per seed, including the reused first sample; from 1 through `2**32 - 1`. |
+| `--seed-step N` | `1` | Positive odd increment less than `2**32` for retry sampling keys. |
+| `--out DIR` | Required | New conditional experiment directory. |
+
+The input must use one real conditioning frame, incoming NOOP, and the original fixed 16-step table-return sequence. Engine seeds and first model seeds come from the saved evidence; there are no separate `--seed` or `--model-seed` options here. Retry model seed `i` is `(first_model_seed + i * seed_step) mod 2**32`. Retries use batch size 1, retain paired branch keys, and stop at the first attempt that is not confidently rejected for a blocked newly revealed departure. A model failure or ambiguous observation does not trigger rejection sampling.
+
+Outputs include `evidence/`, `readings/`, `sampling.json`, `all-attempt-scores/`, `summary.json`, `unconditional-results.json`, `conditional-results.json`, and `gallery-results.json`. First samples and conditionally selected attempts retain separate denominators.
+
+### Export a report from saved results
+
+```bash
+python -m mechanics_eval.cli export-gallery \
+  --evidence mechanics_eval/runs/custom-evidence \
+  --results mechanics_eval/runs/custom-scores/results.json \
+  --gifs fail --out mechanics_eval/runs/custom-report
+```
+
+Required options are `--evidence DIR [DIR ...]`, `--results FILE [FILE ...]`, and `--out DIR`. Supply one result file per evidence directory, in matching order. Optional `--gifs` defaults to `all` and accepts `all`, `fail`, `unknown`, `nonpass`, or `none`. `export-gifs` is an exact alias.
+
+To include every cohort from a completed full run in a fresh report:
+
+```bash
+python -m mechanics_eval.cli export-gallery \
+  --evidence mechanics_eval/runs/example-run/evidence/existing \
+    mechanics_eval/runs/example-run/evidence/focused \
+    mechanics_eval/runs/example-run/evidence/controlled \
+    mechanics_eval/runs/example-run/evidence/table \
+    mechanics_eval/runs/example-run/conditional/evidence \
+  --results mechanics_eval/runs/example-run/scores/existing/results.json \
+    mechanics_eval/runs/example-run/scores/focused/results.json \
+    mechanics_eval/runs/example-run/scores/controlled/results.json \
+    mechanics_eval/runs/example-run/scores/table/results.json \
+    mechanics_eval/runs/example-run/conditional/gallery-results.json \
+  --gifs none --out mechanics_eval/runs/report-without-gifs
+```
+
+Export reads saved RGB and scores without inference or rescoring. Open the new `index.html` locally. The report retains `gallery.json` and individual evidence/result files, with no `evidence.zip`. Changing GIF mode leaves scores, case counts, and denominators intact.
+
+### Reader review and missing-observation audits
+
+Export a small stratified labeling sheet:
+
+```bash
+python -m mechanics_eval.cli export-review \
+  --evidence mechanics_eval/runs/example-run/evidence/existing \
+  --out mechanics_eval/runs/reader-review
+```
+
+Both options are required. The new output directory contains `review.png`, individual crops, and `labels.json`. Enter the visible values/types in the blank `label` and `item_label` fields, and record reviewer/verification information. Keep ambiguous observations unlabeled; use visible evidence rather than reference states to label generated images.
+
+Compare these manual labels with the reader:
+
+```bash
+python -m mechanics_eval.cli audit-reader \
+  --labels mechanics_eval/runs/reader-review/labels.json \
+  --out mechanics_eval/runs/reader-review/audit.json
+```
+
+Both options are required. Here `--out` is a new JSON **file**, with an existing parent directory; a sibling `audit_confusion.csv` is also written. Results report accepted accuracy, readable coverage, and confusion matrices for digits, items, and tiles.
+
+Diagnose missing/UNKNOWN observations across one or more score files:
+
+```bash
+python -m mechanics_eval.cli audit-missing \
+  --results mechanics_eval/runs/example-run/scores/existing/results.json \
+    mechanics_eval/runs/example-run/scores/focused/results.json \
+  --out mechanics_eval/runs/missing-audit
+```
+
+Required options are `--results FILE [FILE ...]` and `--out DIR`. The new directory contains `records.json`, `summary.json`, `report.md`, and supporting crops. These audits do not replace benchmark scores.
+
+### Interactive human review
+
+```bash
+python -m mechanics_eval.cli export-human-review \
+  --results mechanics_eval/runs/example-run/scores/existing/results.json \
+    mechanics_eval/runs/example-run/scores/focused/results.json \
+    mechanics_eval/runs/example-run/conditional/gallery-results.json \
+  --fail-limit 4 --pass-limit 2 \
+  --out mechanics_eval/runs/human-review
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--results FILE [FILE ...]` | Fixed paths under `--runs-root` | Explicit score sources; overrides the default source list. |
+| `--runs-root DIR` | `mechanics_eval/runs` | Root containing the expected `scores/` and `conditional/` directories when `--results` is omitted. Set this to a particular full run directory. |
+| `--fail-limit N` | `4` | Additional failed questions sampled per category; mandatory failures are always included. |
+| `--pass-limit N` | `2` | Positive questions sampled per category. |
+| `--smoke-limit N` | None | Partial item export for UI smoke checks only; not a complete review. |
+| `--out DIR` | Required | New review directory. |
+
+To review all default sources from a completed full run, omit `--results` and use `--runs-root mechanics_eval/runs/example-run`. This reads the four ordinary score files plus conditional unconditional, selected, and all-attempt result files; it does not automatically search for the newest timestamped run.
+
+Open the generated `index.html`, enter judgments, save them explicitly, and export the labels JSON. `review_manifest.json` identifies the review, `labels-template.json` starts empty, and the generated `README.md` explains the annotation workflow. Browser storage is only a convenience; exported labels are the saved review artifact. Viewing cases does not count as annotating them.
+
+Summarize the exported labels:
+
+```bash
+python -m mechanics_eval.cli summarize-human-review \
+  --manifest mechanics_eval/runs/human-review/review_manifest.json \
+  --labels /absolute/path/to/human_labels.json \
+  --out mechanics_eval/runs/human-review-summary
+```
+
+All three options are required. Labels must match the review manifest. The new output directory contains `report.json`, `report.md`, `report.html`, and detailed review tables. Missing judgments remain unreviewed; human review reports agreement/disagreement without changing automated scores. The `audit/pixels.py` diagnostic helper has no public CLI; see [audit/README.md](audit/README.md).
+
+### Regression tests and optional inputs
+
+Run the complete test suite:
 
 ```bash
 python -m unittest discover -s mechanics_eval/tests -v
 ```
 
-Some tests can optionally replay an archived, full-size historical RGB corpus; set `MECHANICS_EVAL_TEST_RUN` to that local run when available. A model-dependent test can use `MECHANICS_EVAL_CHECKPOINT`. Tests requiring unavailable historical evidence explicitly skip. Generated artifacts belong in the ignored `mechanics_eval/runs/`, never in the tracked example directory.
+Run only orchestration tests with mocked stages and model loading:
+
+```bash
+python -m unittest mechanics_eval.tests.test_validate -v
+```
+
+Run a specific test by its dotted name:
+
+```bash
+python -m unittest \
+  mechanics_eval.tests.test_validate.ValidateTests.test_run_keeps_intermediate_data_and_never_overwrites -v
+```
+
+The full suite includes engine fixtures and may compile JAX functions. Some tests replay an optional archived historical RGB corpus; those inputs are not bundled. To provide them:
+
+```bash
+MECHANICS_EVAL_TEST_RUN=/absolute/path/to/historical-run \
+  python -m unittest discover -s mechanics_eval/tests -v
+```
+
+The default historical-input location is `mechanics_eval/runs/test-input`. Tests requiring unavailable evidence explicitly skip. A model-dependent determinism test uses `MECHANICS_EVAL_CHECKPOINT` (default `mechanics_eval/runs/model.npz`); setting it enables real inference:
+
+```bash
+MECHANICS_EVAL_CHECKPOINT=/absolute/path/to/model.npz \
+  python -m unittest \
+  mechanics_eval.tests.test_one_frame.OneFrameTests.test_supported_modules_one_frame_and_repeat -v
+```
+
+An optional Node.js check executes gallery interactions in a simulated DOM using only built-in Node modules:
+
+```bash
+node mechanics_eval/tests/check_gallery_dom.cjs \
+  mechanics_eval/runs/example-run/report/index.html
+```
+
+This checks offline filter/interaction behavior, not real-browser rendering, mobile layout, or file-protocol behavior. Generated artifacts belong in the ignored `mechanics_eval/runs/`, never in the tracked example directory. Test output helpers use temporary directories.
 
 **Scope and limitations.** Fixed, controlled cases cannot establish general long-horizon playability or RL competence. Some poses, occlusions, camera localization, and termination events are ambiguous in RGB and must not be turned into confident failures. Independent image-level verification of newer generated-image pose/identity readers and two borderline movement cases remains pending. Treat the shipped historical findings as a candidate evaluation, not fully independently validated ground truth.

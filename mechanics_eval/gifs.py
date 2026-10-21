@@ -3,7 +3,6 @@ import html
 import json
 from pathlib import Path
 import shutil
-import zipfile
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -79,7 +78,7 @@ def export_gifs(evidence_dirs, results_files, out, gifs='all'):
     if gifs not in GIF_MODES:raise ValueError('Unknown GIF setting: '+str(gifs))
     if len(evidence_dirs)!=len(results_files):raise ValueError('Provide one results JSON per evidence directory')
     out=Path(out);out.mkdir(parents=True,exist_ok=False)
-    data=dict(metric_version='saved mechanics scores',cards=[],cohorts=[],downloads={'All evidence (ZIP)':'evidence.zip','Gallery data':'gallery.json'},
+    data=dict(metric_version='saved mechanics scores',cards=[],cohorts=[],downloads={'Gallery data':'gallery.json'},
               source_note='Local full export. Results, eligibility and denominators are independent of the GIF setting.')
     index=[]
     for i,(evidence,results_file) in enumerate(zip(map(Path,evidence_dirs),map(Path,results_files))):
@@ -179,7 +178,4 @@ def export_gifs(evidence_dirs, results_files, out, gifs='all'):
         engine_seeds=len({c['seed'] for c in data['cards']}))
     data['default_cohort']=next((c['id'] for c in data['cohorts'] if c['label'].startswith('Focused mechanics')),data['cohorts'][0]['id'])
     dump_json(out/'index.json',index);write_page(out,data)
-    with zipfile.ZipFile(out/'evidence.zip','w',compression=zipfile.ZIP_DEFLATED) as archive:
-        for path in sorted(out.rglob('*')):
-            if path.is_file() and path.name!='evidence.zip':archive.write(path,path.relative_to(out))
     return out/'index.html'

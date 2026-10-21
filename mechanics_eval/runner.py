@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import time
 from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -127,10 +128,14 @@ def run(args):
     manifest_file = out / "run.json"
     save_json(manifest_file, manifest)
     try:
+        from .cli import main
+        from .rollouts import EvaluationSession
+        session = EvaluationSession(args.module, args.model.expanduser().resolve(), args.fp32)
         for label, command in command_plan(args, out):
             print("[level1] " + label, flush=True)
-            # Execute from the repository root, including when called from another cwd.
-            subprocess.run(command, cwd=ROOT, check=True)
+            started = time.perf_counter()
+            main(command[3:], session=session)
+            print(f'[level1] {label} complete in {time.perf_counter() - started:.1f}s', flush=True)
             manifest["completed_steps"].append(label)
             save_json(manifest_file, manifest)
         gallery = json.loads((out / "report" / "gallery.json").read_text(encoding="utf-8"))

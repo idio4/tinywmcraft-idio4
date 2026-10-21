@@ -5,7 +5,6 @@ import importlib.util
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
-import zipfile
 
 import numpy as np
 from PIL import Image
@@ -59,7 +58,7 @@ class OneFrameTests(unittest.TestCase):
         z = train._encode(TemporalEncoder(),jnp.array(0.),jnp.array(1.),jnp.asarray(pixels))
         np.testing.assert_array_equal(np.asarray(z)[...,:3],np.asarray(z)[...,3:])
 
-    def test_terminal_gif_export_and_zip(self):
+    def test_terminal_gif_export_without_zip(self):
         spec = next(s for s in catalog() if s.name == 'death')
         refs = reference_pair(self.engine,spec,0,1,4)
         preds = [{'frames':np.repeat(r.frames[-1:],4,axis=0),'rewards':None,'dones':None} for r in refs]
@@ -78,9 +77,10 @@ class OneFrameTests(unittest.TestCase):
             self.assertTrue(gallery.exists())
             with Image.open(root/'gallery/suite0'/name/'selected.gif') as gif:
                 self.assertEqual(gif.n_frames,len(refs[0].frames)+1)
-            with zipfile.ZipFile(root/'gallery/evidence.zip') as archive:
-                self.assertIn('index.html',archive.namelist())
-                self.assertTrue(any(p.endswith('trajectory.npz') for p in archive.namelist()))
+            self.assertFalse((root/'gallery/evidence.zip').exists())
+            data=json.loads((root/'gallery/gallery.json').read_text())
+            self.assertNotIn('evidence.zip',data['downloads'].values())
+            self.assertTrue((root/'gallery/suite0'/name/'trajectory.npz').is_file())
             index=json.loads((root/'gallery/index.json').read_text())
             self.assertEqual(index[0]['unscored_generated_padding_omitted'],3)
             self.assertEqual(index[1]['branch'],'alternative')

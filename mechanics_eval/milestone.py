@@ -148,14 +148,14 @@ def evaluation_targets(spec, group, reference_facts):
                                 if key!='health' and key not in stochastic})
 
 
-def score_run(evidence, out, measurement_source=None, conditional=False):
+def score_run(evidence, out, measurement_source=None, conditional=False, engine=None):
     evidence, out = Path(evidence), Path(out)
     if out.exists():
         raise ValueError('Use a new score directory')
     manifest = json.loads((evidence / 'manifest.json').read_text())
     if manifest['status'] != 'complete':
         raise ValueError('Evidence collection is incomplete')
-    engine = Engine()
+    engine = engine if engine is not None else Engine()
     reader = ReaderV2(engine, engine.construct(catalog()[0], 100000, 8))
     replay_hashes={}
     if measurement_source is not None:
@@ -286,6 +286,7 @@ def score_run(evidence, out, measurement_source=None, conditional=False):
              'Reader validation on generated images is reported separately; this table does not establish reader reliability.',
              'All frames, crops, actions and reward predictions are saved in the evidence directory; per-field reasons and distances are in each measurements.json.']
     (out/'summary.md').write_text('\n'.join(text)+'\n')
-    print(json.dumps({'atomic_primary':report['aggregate']['overall'],
-                      'scenarios':report['scenario_aggregate']},indent=2))
+    counts=report['scenario_aggregate']
+    print(f'[score] {out} | {counts["n"]} scenarios | '
+          f'{counts["pass"]} pass, {counts["fail"]} fail, {counts["unknown"]} unknown',flush=True)
     return report

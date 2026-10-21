@@ -210,6 +210,7 @@ class RejectionTests(unittest.TestCase):
 
     def test_exhaustion_reproducibility_and_paired_keys(self):
         from mechanics_eval.conditional import run
+        from mechanics_eval.rollouts import EvaluationSession
         with TemporaryDirectory() as temp:
             root=Path(temp);source,model,module=self.fixture(root,True);calls=[]
             owner=self
@@ -221,7 +222,11 @@ class RejectionTests(unittest.TestCase):
                     return dict(frames=frames[None],rewards=None,dones=None)
             for suffix in ('a','b'):
                 args=SimpleNamespace(out=root/suffix,first_evidence=source,first_measurements=None,model=model,module='train',fp32=False,max_samples=3,seed_step=1)
-                with patch('mechanics_eval.conditional.ModuleAdapter',Adapter):run(args)
+                session=EvaluationSession('train',model,False) if suffix=='b' else None
+                with patch('mechanics_eval.conditional.ModuleAdapter',Adapter), \
+                     patch('mechanics_eval.rollouts.ModuleAdapter',side_effect=Adapter) as shared_adapter:
+                    run(args,session=session)
+                    self.assertEqual(shared_adapter.call_count,1 if session else 0)
                 report=json.loads((args.out/'summary.json').read_text())
                 self.assertEqual(report['retry_budget_exhausted'],1)
                 self.assertEqual(report['selected_eligible'],0);self.assertEqual(report['conditional']['n'],0)

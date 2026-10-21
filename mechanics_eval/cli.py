@@ -13,13 +13,13 @@ from mechanics_eval.rollouts import ModuleAdapter, reference_pair
 from mechanics_eval.scenarios import Engine
 
 
-def collect(args):
+def collect(args, session=None):
     if args.out.exists():
         raise ValueError('Use a new evidence directory; previous runs are never overwritten')
     if not args.model.is_file():
         raise ValueError('An existing local checkpoint is required')
-    engine = Engine() if args.suite == 'existing' else VariedEngine()
-    adapter = ModuleAdapter(args.module, args.model, args.fp32)
+    engine = session.engine(args.suite != 'existing') if session else (Engine() if args.suite == 'existing' else VariedEngine())
+    adapter = session.adapter() if session else ModuleAdapter(args.module, args.model, args.fp32)
     specs = suite(args.suite)
     if args.scenario:
         unknown = set(args.scenario) - {s.name for s in specs}
@@ -35,13 +35,14 @@ def collect(args):
                               for key in ('STEPS', 'CTX_SIGNAL')
                               if hasattr(getattr(adapter.module, 'legacy', adapter.module), key)},
         'model_window': int(adapter.model.win),
-        'git_head': subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+        'git_head': subprocess.check_output(['git','rev-parse','HEAD'], cwd=Path(__file__).resolve().parent.parent, text=True).strip(),
         'packages': {name: importlib.metadata.version(name) for name in ('craftax','jax','flax','numpy')},
         'sources': {str(p): digest(p) for p in [Path(__file__), *sorted(Path(__file__).resolve().parent.glob('*.py'))]}}}
     dump_json(args.out / 'manifest.json', report)
     start = time.perf_counter()
     jobs = [(variants(s, i) if args.suite != 'existing' else s, args.seed + i)
             for s in specs for i in range(args.samples)]
+    last_progress = start
     for offset in range(0, len(jobs), args.batch_size):
         batch = jobs[offset:offset + args.batch_size]
         refs = [reference_pair(engine, spec, seed, args.context, args.horizon) for spec, seed in batch]
@@ -69,15 +70,20 @@ def collect(args):
                     'sampling': 'module.step defaults; fold_in(PRNGKey(model_seed), timestep); identical branch keys'}
                 dump_json(meta_path, meta)
                 report['cases'].append(name)
-                print(f'[saved] {name}', flush=True)
             dump_json(args.out / 'manifest.json', report)
+        now = time.perf_counter()
+        if now - last_progress >= 30 or offset + len(batch) == len(jobs):
+            completed = min(offset + len(batch), len(jobs)) * args.model_samples
+            print(f'[collect/{args.out.name}] {completed}/{len(jobs) * args.model_samples} cases | '
+                  f'seeds {args.seed}–{args.seed + args.samples - 1} | elapsed {now - start:.1f}s', flush=True)
+            last_progress = now
     report.update(status='complete', elapsed_s=round(time.perf_counter() - start, 3))
     dump_json(args.out / 'manifest.json', report)
-    print(json.dumps({'status': report['status'], 'cases': len(report['cases']), 'out': str(args.out),
-                      'elapsed_s': report['elapsed_s']}, indent=2))
+    print(f'[collect/{args.out.name}] complete | {len(report["cases"])} cases | '
+          f'{report["elapsed_s"]:.1f}s | {args.out}', flush=True)
 
 
-def main():
+def main(argv=None, session=None):
     p = argparse.ArgumentParser(description=__doc__)
     commands = p.add_subparsers(dest='command', required=True)
     c = commands.add_parser('collect')
@@ -133,7 +139,7 @@ def main():
     g.add_argument('--results', type=Path, nargs='+', required=True)
     g.add_argument('--out', type=Path, required=True)
     g.add_argument('--gifs', choices=('all','fail','unknown','nonpass','none'), default='all', help='Media only; every card, score and denominator is always exported')
-    args = p.parse_args()
+    args = p.parse_args(argv)
     if args.command=='export-human-review':
         from mechanics_eval.audit.human import export_review
         report=export_review(args.out,args.results,args.runs_root,args.fail_limit,args.pass_limit,args.smoke_limit)
@@ -149,11 +155,11 @@ def main():
         print(json.dumps({k:v for k,v in summary.items() if k!='tracked_table_none'},indent=2))
     elif args.command=='conditional-route':
         from mechanics_eval.conditional import run
-        print(run(args))
+        print(run(args, session=session))
     elif args.command == 'collect':
         if min(args.samples, args.model_samples, args.batch_size) < 1 or not 1 <= args.horizon <= 128 or not 1 <= args.context <= 24 or args.seed < 0 or (args.model_seed is not None and args.model_seed < 0):
             p.error('invalid counts, horizon, context or seed')
-        collect(args)
+        collect(args, session=session)
     elif args.command in ('export-gallery','export-gifs'):
         from mechanics_eval.gifs import export_gifs
         print(export_gifs(args.evidence, args.results, args.out, args.gifs))
@@ -172,7 +178,8 @@ def main():
                           for k,v in report['groups'].items()},indent=2))
     else:
         from mechanics_eval.milestone import score_run
-        report=score_run(args.evidence, args.out,args.measurements,args.conditional_fixed_route)
+        report=score_run(args.evidence, args.out,args.measurements,args.conditional_fixed_route,
+                         engine=session.engine() if session else None)
         if report['status'].startswith('failed'):
             raise SystemExit(1)
 

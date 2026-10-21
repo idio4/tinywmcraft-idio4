@@ -41,10 +41,10 @@ def conditional_row(row,readings):
     return result
 
 
-def finalize(out):
+def finalize(out, engine=None):
     from .milestone import score_run
     out=Path(out);sampling=json.loads((out/'sampling.json').read_text())
-    report=score_run(out/'evidence',out/'all-attempt-scores',out/'readings')
+    report=score_run(out/'evidence',out/'all-attempt-scores',out/'readings',engine=engine)
     rows={Path(r['evidence']).name:r for r in report['samples']};first=[];selected=[];seed_results=[]
     selected_by_case={};trial_by_case={}
     for seed in sampling['seeds']:
@@ -95,7 +95,7 @@ def finalize(out):
     return out/'summary.json'
 
 
-def run(args):
+def run(args, session=None):
     out=Path(args.out)
     if out.exists():raise ValueError('Use a new conditional output directory')
     if not 1<=args.max_samples<2**32:raise ValueError('max-samples must be between 1 and 2**32-1')
@@ -118,7 +118,8 @@ def run(args):
     if not candidates or len({s for s,_ in candidates})!=len(candidates):
         raise ValueError('Expected exactly one first table-return sample per engine seed')
     out.mkdir();evidence=out/'evidence';evidence.mkdir();cache=out/'readings';cache.mkdir()
-    engine=Engine();reader=ReaderV2(engine,engine.construct(catalog()[0],100000,8));adapter=None
+    engine=session.engine() if session else Engine()
+    reader=ReaderV2(engine,engine.construct(catalog()[0],100000,8));adapter=None
     manifest=dict(schema_version=3,status='in_progress',cases=[],config=dict(suite='conditional_table_return',
         scenario=['table_leave_return'],context=1,horizon=16,max_samples=args.max_samples,seed_step=args.seed_step,
         module=args.module,fp32=args.fp32,retry_batch_size=1,first_evidence=str(source.resolve())),
@@ -147,7 +148,7 @@ def run(args):
                 shutil.copytree(source/first_name,target)
             else:
                 if adapter is None:
-                    adapter=ModuleAdapter(args.module,args.model,args.fp32)
+                    adapter=session.adapter() if session else ModuleAdapter(args.module,args.model,args.fp32)
                     manifest['provenance']['module_sha256']=digest(adapter.module.__file__)
                     if manifest['provenance']['module_sha256']!=first_manifest['provenance']['module_sha256']:
                         raise ValueError('Retry model module differs from first-sample module')
@@ -181,11 +182,13 @@ def run(args):
                 evidence=str(target.resolve()),eligibility_evidence=str((target/'eligibility.json').resolve()),
                 eligibility={'decision':eligibility['decision'],'reason':eligibility['reason']})
             trials.append(trial);manifest['cases'].append(name);dump_json(evidence/'manifest.json',manifest)
-            print(f'[{environment_seed}:{sample_index}] {eligibility["decision"]} {eligibility["reason"]}',flush=True)
             if eligibility['decision']!='REJECTED_BLOCKED_ROUTE':break
         selection=retry_selection(trials,args.max_samples)
         sampling['seeds'].append(dict(engine_seed=environment_seed,attempts=trials,selection=selection))
         dump_json(out/'sampling.json',sampling)
+        print(f'[conditional] {len(sampling["seeds"])}/{len(candidates)} seeds complete | '
+              f'{sum(len(s["attempts"]) for s in sampling["seeds"])} attempts | '
+              f'last seed {environment_seed}: {len(trials)} attempts, {selection["status"]}',flush=True)
     manifest['status']='complete';dump_json(evidence/'manifest.json',manifest)
     dump_json(cache/'cache_manifest.json',dict(reader=reader.profile,evidence_manifest_sha256=digest(evidence/'manifest.json')))
-    return finalize(out)
+    return finalize(out, engine=engine)

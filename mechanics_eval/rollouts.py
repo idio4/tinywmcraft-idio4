@@ -8,6 +8,26 @@ import numpy as np
 from .scenarios import facts, u8
 
 
+class EvaluationSession:
+    """Reuse model weights and compiled engines across one evaluation run."""
+    def __init__(self, module, checkpoint, fp32):
+        self.module, self.checkpoint, self.fp32 = module, checkpoint, fp32
+        self._adapter = None
+        self._engines = {}
+
+    def adapter(self):
+        if self._adapter is None:
+            self._adapter = ModuleAdapter(self.module, self.checkpoint, self.fp32)
+        return self._adapter
+
+    def engine(self, focused=False):
+        if focused not in self._engines:
+            from .focused import VariedEngine
+            from .scenarios import Engine
+            self._engines[focused] = VariedEngine() if focused else Engine()
+        return self._engines[focused]
+
+
 @dataclass
 class Reference:
     context: np.ndarray

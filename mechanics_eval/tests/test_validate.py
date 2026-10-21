@@ -69,9 +69,10 @@ class ValidateTests(unittest.TestCase):
             args = self.make_args(root, "--out", str(output), "--gifs", "none")
             seen = []
 
-            def fake_stage(command, *, cwd, check):
-                self.assertEqual(cwd, validate.ROOT)
-                self.assertTrue(check)
+            sessions = []
+
+            def fake_stage(command, *, session):
+                sessions.append(session)
                 seen.append(command)
                 if "export-gallery" in command:
                     report = output / "report"
@@ -81,9 +82,10 @@ class ValidateTests(unittest.TestCase):
                         "conditional": {"selected_eligible": 1},
                     }))
 
-            with patch("mechanics_eval.runner.subprocess.run", side_effect=fake_stage):
+            with patch("mechanics_eval.cli.main", side_effect=fake_stage):
                 target = validate.run(args)
                 self.assertEqual(len(seen), 10)
+                self.assertTrue(all(session is sessions[0] for session in sessions))
                 self.assertEqual(target, (output / "report" / "index.html").resolve())
                 self.assertEqual(json.loads((output / "results.json").read_text())["status"], "complete")
                 self.assertEqual(json.loads((output / "run.json").read_text())["status"], "complete")
@@ -95,7 +97,7 @@ class ValidateTests(unittest.TestCase):
             root = Path(temp)
             output = root / "output"
             args = self.make_args(root, "--out", str(output))
-            with patch("mechanics_eval.runner.subprocess.run", side_effect=subprocess.CalledProcessError(5, "collect")) as p:
+            with patch("mechanics_eval.cli.main", side_effect=subprocess.CalledProcessError(5, "collect")) as p:
                 with self.assertRaises(subprocess.CalledProcessError):
                     validate.run(args)
             self.assertEqual(p.call_count, 1)
@@ -103,6 +105,20 @@ class ValidateTests(unittest.TestCase):
             self.assertEqual(status["status"], "failed")
             self.assertEqual(status["completed_steps"], [])
             self.assertFalse((output / "results.json").exists())
+
+    def test_session_loads_model_lazily_once_and_reuses_engines(self):
+        from mechanics_eval.rollouts import EvaluationSession
+        with patch('mechanics_eval.rollouts.ModuleAdapter') as adapter, \
+             patch('mechanics_eval.scenarios.Engine') as engine, \
+             patch('mechanics_eval.focused.VariedEngine') as focused:
+            session = EvaluationSession('train', Path('model.npz'), True)
+            adapter.assert_not_called()
+            self.assertIs(session.adapter(), session.adapter())
+            adapter.assert_called_once_with('train', Path('model.npz'), True)
+            self.assertIs(session.engine(), session.engine())
+            self.assertIs(session.engine(True), session.engine(True))
+            engine.assert_called_once_with()
+            focused.assert_called_once_with()
 
 
 if __name__ == "__main__":
