@@ -66,6 +66,18 @@ python -m mechanics_eval --model checkpoints/other.npz --module other_adapter
 
 No training or `eval.py` changes are necessary.
 
+## Reading your model's results
+
+The key output is **per-mechanic pass frequency**, not a pooled PASS/FAIL total. The report opens with a grouped table, for example **Stone pickaxe crafting: 9/10 (90%)**, showing the exact number of attempts, failures and UNKNOWN cases. This is an illustration, not a claim about the included checkpoint.
+
+- **Scenario frequencies:** PASS / all attempts of that specific scenario within the currently selected cohort and scope. Ten engine seeds measure frequency under controlled test variations, not probability of success in arbitrary gameplay.
+- **Atomic mechanics:** Inspect required checks separately (tool creation, ingredient accounting, inventory persistence, etc.). Their rate is PASS / eligible checks; NOT_TESTED prerequisites and UNKNOWN observations are displayed explicitly.
+- **No pooling:** The focused, diagnostic, movement, placement, first-sample, conditional-selected and rejected-attempt cohorts remain separate. The report never adds their overlapping trials into one model-quality score.
+- **Uncertainty:** 9/10 is stronger descriptive evidence than 1/1, but ten runs are still a small, structured sample. No arbitrary threshold declares a model globally "good."
+- **Inspect evidence:** Click a mechanic row in the HTML report to filter the corresponding cases and examine failing GIFs or atomic measurements.
+
+The same frequencies are available in `report/gallery.json`, `report/mechanics.csv`, `results.json` under each cohort's `summary[scope].mechanics`, and in the scoring outputs `scores/<group>/mechanics.csv` and `scores/<group>/summary.md`. New runs automatically generate these files. Existing saved RGB evidence can be rescored or re-exported without new model inference.
+
 ## What is tested?
 
 Ordinary trials use **one real conditioning frame**, **16 autoregressive generated steps**, one model draw per initial state, and selected vs NOOP/alternative actions with matched model keys. Engine seeds change controlled surroundings while preserving the relevant mechanic. The groups overlap; they are **not** disjoint collections of scenarios.

@@ -30,9 +30,18 @@ const document={getElementById:id=>ids.get(id),createElement:tag=>new Element(ta
 const scripts=[...source.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)];
 const context=vm.createContext({document,console});vm.runInContext(scripts.at(-1)[1],context,{timeout:10000});
 const get=id=>ids.get(id),articles=root.querySelectorAll('article[data-card]');assert.equal(articles.length,data.cards.length);
+const initial=data.cohorts.find(c=>c.id===(get('cohort')?.value));
+assert(initial && initial.summary.all.mechanics,'per-mechanic summary must be included in the gallery');
+const checkMechanics=()=>{const scope=get('scope').value,cohort=data.cohorts.find(c=>c.id===get('cohort').value);
+ const expected=cohort.summary[scope].mechanics.scenarios.length;
+ const bodyRows=get('mechanics').querySelectorAll('tr[data-mechanic]');
+ assert.equal(bodyRows.length,expected,'visible mechanic frequencies must match this cohort and scope');
+ for(const row of cohort.summary[scope].mechanics.scenarios)assert.equal(row.attempts,row.passed+row.failed+row.unknown);
+};
+
 let checks=0;function verify(){const cohort=get('cohort').value,scope=get('scope').value;const expected=data.cards.filter(c=>{const view=c.views[cohort!=='selected'&&c.views.ordinary?'ordinary':'current'];return c.cohorts.includes(cohort)&&(scope==='all'||scope===c.scope)&&(get('status').value==='all'||get('status').value===view.status)&&(get('category').value==='all'||get('category').value===c.category)&&(get('branch').value==='all'||get('branch').value===c.branch)&&c.case.toLowerCase().includes(get('scenario').value.trim().toLowerCase())});assert.equal(articles.filter(n=>!n.hidden).length,expected.length);assert.equal(get('empty').hidden,expected.length!==0);const stats=data.cohorts.find(c=>c.id===cohort).summary[scope].scenarios;for(const [i,k] of ['pass','fail','unknown'].entries())assert.equal(get('stats').children[i].children[1].textContent,String(stats[k]));assert.equal(get('stats').children[3].children[1].textContent,stats.measurement_coverage==null?'—':(100*stats.measurement_coverage).toFixed(1)+'%');checks++}
-function set(id,value,event='change'){get(id).value=value;get(id).dispatch(event);verify()}
-verify();
+function set(id,value,event='change'){get(id).value=value;get(id).dispatch(event);verify();if(id==='cohort'||id==='scope')checkMechanics()}
+verify();checkMechanics();
 for(const cohort of data.cohorts){set('cohort',cohort.id);for(const scope of ['all','static','dynamic'])set('scope',scope);set('scope','all');const summary=get('stats').textContent;for(const status of ['pass','fail','unknown','not_applicable','all']){set('status',status);assert.equal(get('stats').textContent,summary)}for(const branch of ['selected','noop','alternative','consistency','all'])set('branch',branch);for(const category of [...new Set(data.cards.map(c=>c.category))])set('category',category);set('category','all');set('scenario','gather','input');set('scenario','__NO_MATCH__','input');get('reset').dispatch('click');verify()}
 let details=0;for(const n of root.querySelectorAll('details.stages[data-stage-view]')){n.open=true;n.dispatch('toggle');assert(n.querySelector('.stage-content').textContent.length>0);details++}
 assert(!source.includes('fetch('));assert(!/<script[^>]+src=/.test(source));assert(source.includes('@media(max-width:720px)'));

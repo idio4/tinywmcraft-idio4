@@ -50,6 +50,10 @@ def summary(rows, ordinary=False):
         groups=[g['required'] for g in result[scope]['categories'].values() if g['required']['eligible']]
         result[scope]['category_macro']={k:float(np.mean([g[k] for g in groups])) if groups else None
             for k in ('success_rate','measurement_coverage','eligibility_coverage')}
+    from .performance import summarize as mechanic_summary
+    for scope in result:
+        scoped = [r for r in rows if scope == "all" or r.get("scope", "static") == scope]
+        result[scope]["mechanics"] = mechanic_summary(scoped, ordinary=ordinary)
     return result
 
 

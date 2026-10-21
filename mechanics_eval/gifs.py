@@ -177,5 +177,16 @@ def export_gifs(evidence_dirs, results_files, out, gifs='all'):
         generated_steps=sorted({c['generated_steps'] for c in data['cards'] if 'generated_steps' in c}),
         engine_seeds=len({c['seed'] for c in data['cards']}))
     data['default_cohort']=next((c['id'] for c in data['cohorts'] if c['label'].startswith('Focused mechanics')),data['cohorts'][0]['id'])
+    import csv
+    with (out/'mechanics.csv').open('w',newline='',encoding='utf-8') as stream:
+        writer=csv.DictWriter(stream,fieldnames=['cohort','scope','kind','name','category','required','attempts','eligible','passed','failed','unknown','not_tested','not_applicable','pass_rate','decision_coverage','eligibility_coverage','engine_seed_count','model_sample_count'])
+        writer.writeheader()
+        for cohort in data['cohorts']:
+            for scope,score in cohort['summary'].items():
+                frequency=score.get('mechanics',{})
+                for kind,entries in (('scenario',frequency.get('scenarios',[])),('atomic',frequency.get('atomic',[]))):
+                    for row in entries:
+                        writer.writerow({key:val for key,val in dict(cohort=cohort['id'],scope=scope,kind=kind,**row).items() if key in writer.fieldnames})
+    data['downloads']['Mechanic frequencies CSV']='mechanics.csv'
     dump_json(out/'index.json',index);write_page(out,data)
     return out/'index.html'

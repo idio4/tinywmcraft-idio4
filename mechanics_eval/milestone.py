@@ -266,6 +266,9 @@ def score_run(evidence, out, measurement_source=None, conditional=False, engine=
                             'Zombie identity is limited to an unambiguous first-step visible reachable region; general visual termination is unsupported. Player pose abstains on corruption and noisy night lighting.',
                             'Generated-reader accuracy requires independent labels; clean-reference accuracy is not sufficient.',
                             'Long-horizon invariants compare generated observations with each other, not recorded future pixels.']}
+    from .performance import summarize as mechanic_frequencies, write_csv as write_mechanic_csv
+    report['mechanic_performance'] = mechanic_frequencies(rows)
+    write_mechanic_csv(out/'mechanics.csv', report['mechanic_performance'])
     dump_json(out/'results.json', report)
     columns = ['scenario','category','seed','status','complete','facts_accepted','facts_total','counterfactual']
     with (out/'samples.csv').open('w',newline='') as f:
@@ -285,8 +288,28 @@ def score_run(evidence, out, measurement_source=None, conditional=False, engine=
              '', 'Legacy single-primary macro averages: '+json.dumps(report['aggregate']['macro']), '',
              'Reader validation on generated images is reported separately; this table does not establish reader reliability.',
              'All frames, crops, actions and reward predictions are saved in the evidence directory; per-field reasons and distances are in each measurements.json.']
+    text += ['', '## Scenario pass frequency by mechanic', '',
+             'Each frequency is PASS / attempted cases. UNKNOWN does not count as success.',
+             'These are descriptive observations over the tested seeds, not verified generalization rates.', '',
+             '| Mechanic | Pass / attempts | Pass rate | Fail | Unknown | Decision coverage |',
+             '|---|---:|---:|---:|---:|---:|']
+    for item in report['mechanic_performance']['scenarios']:
+        text.append(f"| {item['name']} | {item['passed']}/{item['attempts']} | {item['pass_rate']:.0%} | {item['failed']} | {item['unknown']} | {item['decision_coverage']:.0%} |")
+    text += ['', '## Required atomic checks (eligible attempts only)', '',
+             'NOT_TESTED prerequisites and NOT_APPLICABLE checks are not successes.', '',
+             '| Atomic mechanic | Pass / eligible | Pass rate | Fail | Unknown | NOT_TESTED |',
+             '|---|---:|---:|---:|---:|---:|']
+    for item in report['mechanic_performance']['atomic']:
+        if not item['required']:continue
+        rate = f"{item['pass_rate']:.0%}" if item['pass_rate'] is not None else 'N/A'
+        text.append(f"| {item['name']} | {item['passed']}/{item['eligible']} | {rate} | {item['failed']} | {item['unknown']} | {item['not_tested']} |")
+    text += ['', 'Machine-readable per-mechanic data: mechanics.csv and results.json → mechanic_performance.']
     (out/'summary.md').write_text('\n'.join(text)+'\n')
     counts=report['scenario_aggregate']
+    print('[score] Per-mechanic PASS / attempts (with FAIL and UNKNOWN separately):', flush=True)
+    for item in report['mechanic_performance']['scenarios']:
+        print(f"  {item['name']}: {item['passed']}/{item['attempts']} ({item['pass_rate']:.0%}) | "
+              f"{item['failed']} FAIL, {item['unknown']} UNKNOWN", flush=True)
     print(f'[score] {out} | {counts["n"]} scenarios | '
           f'{counts["pass"]} pass, {counts["fail"]} fail, {counts["unknown"]} unknown',flush=True)
     return report
