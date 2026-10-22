@@ -106,7 +106,7 @@ class ReportingIntegrationTests(unittest.TestCase):
                     source=root/str(conditional);source.mkdir();evidence,result=fixture(source,conditional)
                     before=digest(result);summaries=None
                     for mode in ('all','fail','unknown','nonpass','none'):
-                        out=source/mode;export_gifs([evidence],[result],out,mode)
+                        out=source/mode;export_gifs([evidence],[result],out,mode,gif_workers=1)
                         data=self.assert_export(out)
                         if summaries is None:summaries=data['cohorts']
                         self.assertEqual(data['cohorts'],summaries)

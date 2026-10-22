@@ -3,6 +3,7 @@ from collections import Counter
 import csv
 import json
 from pathlib import Path
+import time
 import numpy as np
 from .evidence import digest, dump_json, load_case
 from .reader_v2 import ReaderV2
@@ -149,6 +150,7 @@ def evaluation_targets(spec, group, reference_facts):
 
 
 def score_run(evidence, out, measurement_source=None, conditional=False, engine=None):
+    started=time.perf_counter()
     evidence, out = Path(evidence), Path(out)
     if out.exists():
         raise ValueError('Use a new score directory')
@@ -232,8 +234,8 @@ def score_run(evidence, out, measurement_source=None, conditional=False, engine=
                         reference_records['tiles'].append({'truth':truth[str(branch)]['tiles'][t][key], 'prediction':value})
         case_out = out / name; case_out.mkdir()
         dump_json(case_out/'measurements.json', {'context_last':ctx, 'generated':read,
-                   'reader':reader.profile,'rgb_evidence':str((evidence/name/'trajectory.npz').resolve())})
-        dump_json(case_out/'outcomes.json', row)
+                   'reader':reader.profile,'rgb_evidence':str((evidence/name/'trajectory.npz').resolve())},compact=True)
+        dump_json(case_out/'outcomes.json', row,compact=True)
         rows.append(row)
     validation = {k:confusion(v) for k,v in reference_records.items()}
     reference_ok = all(v['correct'] == v['accepted'] for v in validation.values())
@@ -269,7 +271,7 @@ def score_run(evidence, out, measurement_source=None, conditional=False, engine=
     from .performance import summarize as mechanic_frequencies, write_csv as write_mechanic_csv, markdown
     report['mechanic_performance'] = mechanic_frequencies(rows)
     write_mechanic_csv(out/'mechanics.csv', report['mechanic_performance'])
-    dump_json(out/'results.json', report)
+    dump_json(out/'results.json', report,compact=True)
     columns = ['scenario','category','seed','status','complete','facts_accepted','facts_total','counterfactual',
                'scenario_status','scenario_complete']
     with (out/'samples.csv').open('w',newline='') as f:
@@ -301,5 +303,6 @@ def score_run(evidence, out, measurement_source=None, conditional=False, engine=
         print(f"  {item['name']}: {item['passed']}/{item['attempts']} ({item['pass_rate']:.1%}) | "
               f"{item['failed']} FAIL, {item['unknown']} UNKNOWN", flush=True)
     print(f'[score] {out} | {counts["n"]} scenarios | '
-          f'{counts["pass"]} pass, {counts["fail"]} fail, {counts["unknown"]} unknown',flush=True)
+          f'{counts["pass"]} pass, {counts["fail"]} fail, {counts["unknown"]} unknown | '
+          f'elapsed {time.perf_counter()-started:.1f}s',flush=True)
     return report

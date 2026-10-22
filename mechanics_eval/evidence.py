@@ -12,8 +12,10 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def dump_json(path, value):
-    Path(path).write_text(json.dumps(value, indent=2, allow_nan=False) + '\n')
+def dump_json(path, value, *, compact=False):
+    Path(path).write_text(json.dumps(value, indent=None if compact else 2,
+                                    separators=(',', ':') if compact else None,
+                                    allow_nan=False) + '\n')
 
 
 def save_case(path, spec, refs, predictions, seed, model_seed, repeat, group):

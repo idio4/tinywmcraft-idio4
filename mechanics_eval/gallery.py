@@ -76,10 +76,11 @@ def write_page(out, data):
             f'<h3>{html.escape(card["case"])}</h3><p class="card-meta">{html.escape(card["branch"])} branch · engine {card["seed"]} · model {card["model_seed"]}</p>'
             f'<p class="card-meta">Atomic target: {html.escape(card["atomic_status"].upper())} · paired contrast: {html.escape(card["counterfactual_status"].upper())}</p>'
             +selection_html+''.join(views)+(f'<details class="stages"><summary>Paired atomic contrast</summary><pre>{html.escape(json.dumps(card["counterfactual"],indent=2))}</pre></details>' if card.get('counterfactual') else '')+f'<details class="stages"><summary>Actions and sampling</summary><pre>{html.escape(json.dumps({k:card.get(k) for k in ("actions","seed","model_seed","context_length","valid_steps")},indent=2))}</pre></details><footer>{links}</footer></article>')
-    payload=json.dumps(data,separators=(',',':'),ensure_ascii=True).replace('<','\\u003c')
+    document=json.dumps(data,separators=(',',':'),ensure_ascii=True,allow_nan=False)
+    payload=document.replace('<','\\u003c')
     template=Path(__file__).with_name('gallery.html').read_text()
     page=template.replace('__CARDS__','\n'.join(cards)).replace('__DATA__',payload)
     page=page.replace('__CHECKPOINT__',html.escape(data.get('checkpoint_name','saved checkpoint'),quote=True))
     (out/'index.html').write_text(page)
-    (out/'gallery.json').write_text(json.dumps(data,separators=(',',':'),ensure_ascii=True)+'\n')
+    (out/'gallery.json').write_text(document+'\n')
     return out/'index.html'

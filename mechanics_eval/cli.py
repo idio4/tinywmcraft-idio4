@@ -5,19 +5,20 @@ import json
 from pathlib import Path
 import subprocess
 import time
-import jax
-import numpy as np
-from mechanics_eval.evidence import digest, dump_json, save_case
-from mechanics_eval.focused import VariedEngine, category, suite, variants
-from mechanics_eval.rollouts import ModuleAdapter, reference_pair
-from mechanics_eval.scenarios import Engine
 
 
 def collect(args, session=None):
+    import jax
+    import numpy as np
+    from mechanics_eval.evidence import digest, dump_json, save_case
+    from mechanics_eval.focused import VariedEngine, category, suite, variants
+    from mechanics_eval.rollouts import ModuleAdapter, reference_pair
+    from mechanics_eval.scenarios import Engine
     if args.out.exists():
         raise ValueError('Use a new evidence directory; previous runs are never overwritten')
     if not args.model.is_file():
         raise ValueError('An existing local checkpoint is required')
+    setup_started = time.perf_counter()
     engine = session.engine(args.suite != 'existing') if session else (Engine() if args.suite == 'existing' else VariedEngine())
     adapter = session.adapter() if session else ModuleAdapter(args.module, args.model, args.fp32)
     specs = suite(args.suite)
@@ -40,20 +41,26 @@ def collect(args, session=None):
         'sources': {str(p): digest(p) for p in [Path(__file__), *sorted(Path(__file__).resolve().parent.glob('*.py'))]}}}
     dump_json(args.out / 'manifest.json', report)
     start = time.perf_counter()
+    timings = dict(setup_s=round(start-setup_started,3),reference_s=0.,model_rollout_s=0.,evidence_write_s=0.)
     jobs = [(variants(s, i) if args.suite != 'existing' else s, args.seed + i)
             for s in specs for i in range(args.samples)]
     last_progress = start
     for offset in range(0, len(jobs), args.batch_size):
         batch = jobs[offset:offset + args.batch_size]
+        phase_started = time.perf_counter()
         refs = [reference_pair(engine, spec, seed, args.context, args.horizon) for spec, seed in batch]
+        timings['reference_s'] += time.perf_counter()-phase_started
         for repeat in range(args.model_samples):
             model_seed = int(np.random.SeedSequence([args.seed if args.model_seed is None else args.model_seed, offset, repeat, 933]).generate_state(1)[0])
             predictions = []
+            phase_started = time.perf_counter()
             for branch in range(2):
                 branch_refs = [pair[branch] for pair in refs]
                 future = np.asarray([list(ref.actions) + [0] * (args.horizon - len(ref.actions)) for ref in branch_refs])
                 predictions.append(adapter.rollout(np.stack([ref.context for ref in branch_refs]),
                     np.stack([ref.context_actions for ref in branch_refs]), future, model_seed, True))
+            timings['model_rollout_s'] += time.perf_counter()-phase_started
+            phase_started = time.perf_counter()
             for i, ((spec, seed), pair) in enumerate(zip(batch, refs)):
                 name = f'{spec.name}_s{seed}_m{repeat}'
                 single = [{k: v[i] if v is not None else None for k, v in pred.items()} for pred in predictions]
@@ -71,6 +78,7 @@ def collect(args, session=None):
                 dump_json(meta_path, meta)
                 report['cases'].append(name)
             dump_json(args.out / 'manifest.json', report)
+            timings['evidence_write_s'] += time.perf_counter()-phase_started
         now = time.perf_counter()
         if now - last_progress >= 30 or offset + len(batch) == len(jobs):
             completed = min(offset + len(batch), len(jobs)) * args.model_samples
@@ -78,9 +86,13 @@ def collect(args, session=None):
                   f'seeds {args.seed}–{args.seed + args.samples - 1} | elapsed {now - start:.1f}s', flush=True)
             last_progress = now
     report.update(status='complete', elapsed_s=round(time.perf_counter() - start, 3))
+    report['timings_s'] = {key:round(value,3) for key,value in timings.items()}
     dump_json(args.out / 'manifest.json', report)
     print(f'[collect/{args.out.name}] complete | {len(report["cases"])} cases | '
           f'{report["elapsed_s"]:.1f}s | {args.out}', flush=True)
+    print(f'[collect/{args.out.name}] reference {timings["reference_s"]:.1f}s | '
+          f'model + heads {timings["model_rollout_s"]:.1f}s | evidence writing {timings["evidence_write_s"]:.1f}s | '
+          f'setup {timings["setup_s"]:.1f}s', flush=True)
 
 
 def main(argv=None, session=None):
@@ -139,6 +151,7 @@ def main(argv=None, session=None):
     g.add_argument('--results', type=Path, nargs='+', required=True)
     g.add_argument('--out', type=Path, required=True)
     g.add_argument('--gifs', choices=('all','fail','unknown','nonpass','none'), default='all', help='Media only; every card, score and denominator is always exported')
+    g.add_argument('--gif-workers',type=int,default=4,help='Maximum CPU workers for offline GIF export (positive; default 4)')
     args = p.parse_args(argv)
     if args.command=='export-human-review':
         from mechanics_eval.audit.human import export_review
@@ -162,13 +175,15 @@ def main(argv=None, session=None):
         collect(args, session=session)
     elif args.command in ('export-gallery','export-gifs'):
         from mechanics_eval.gifs import export_gifs
-        print(export_gifs(args.evidence, args.results, args.out, args.gifs))
+        print(export_gifs(args.evidence, args.results, args.out, args.gifs, args.gif_workers))
     elif args.command == 'export-review':
         from mechanics_eval.audit.reader import export_review
         print(export_review(args.evidence,args.out))
     elif args.command == 'audit-reader':
         from mechanics_eval.audit.reader import validate_labels
         from mechanics_eval.reader_v2 import ReaderV2
+        from mechanics_eval.scenarios import Engine
+        from mechanics_eval.focused import suite
         if args.out.exists():
             p.error('Use a new audit output file')
         engine=Engine()

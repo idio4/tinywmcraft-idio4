@@ -32,6 +32,7 @@ def arguments(argv=None):
     p.add_argument("--module", default="train", help="Python model adapter implementing load_model/start/step/heads")
     p.add_argument("--out", type=Path, help="New output directory; default: timestamped subfolder of mechanics_eval/runs/")
     p.add_argument("--gifs", choices=GIF_MODES, default="all", help="Which verdicts receive GIFs; all scores are always exported")
+    p.add_argument("--gif-workers", type=int, default=4, help="Maximum CPU workers for offline GIF export; does not affect sampling")
     p.add_argument("--seed", type=int, default=0, help="First engine seed; focused/supplementary cohorts use ten consecutive seeds")
     p.add_argument("--model-seed", type=int, help="Optional model sampling seed root; the default follows --seed")
     p.add_argument("--batch-size", type=int, default=4, help="Ordinary sampling batch size (affects model random keys)")
@@ -46,6 +47,8 @@ def arguments(argv=None):
         p.error("seeds must be nonnegative")
     if args.batch_size < 1 or args.max_samples < 1 or args.seed_step < 1 or args.seed_step % 2 != 1:
         p.error("batch-size/max-samples must be positive; seed-step must be positive and odd")
+    if args.gif_workers < 1:
+        p.error("gif-workers must be positive")
     if not all(part.isidentifier() for part in args.module.split(".")):
         p.error("--module must be a valid importable Python module name")
     return args
@@ -90,7 +93,7 @@ def command_plan(args, out):
     commands.append(("gallery", cmd + ["export-gallery",
                     "--evidence", *map(str, [*evidence, out / "conditional" / "evidence"]),
                     "--results", *map(str, [*scores, out / "conditional" / "gallery-results.json"]),
-                    "--gifs", args.gifs, "--out", str(out / "report")]))
+                    "--gifs", args.gifs, "--gif-workers", str(args.gif_workers), "--out", str(out / "report")]))
     return commands
 
 
@@ -110,6 +113,7 @@ def run(args):
     out = new_output(args)
     if out.exists():
         raise ValueError("Output already exists. Choose a new --out: " + str(out))
+    run_started = time.perf_counter()
     # The exclusive mkdir guards against collisions and never removes old evidence.
     out.mkdir(parents=True, exist_ok=False)
     (out / "evidence").mkdir()
@@ -119,11 +123,11 @@ def run(args):
         "module": args.module, "fp32": args.fp32, "seed": args.seed,
         "model_seed": args.model_seed, "batch_size": args.batch_size,
         "context": 1, "horizon": 16, "max_samples": args.max_samples,
-        "seed_step": args.seed_step, "gifs": args.gifs,
+        "seed_step": args.seed_step, "gifs": args.gifs, "gif_workers": args.gif_workers,
     }
     manifest = {
         "status": "running", "started_utc": datetime.now(timezone.utc).isoformat(),
-        "configuration": config, "completed_steps": [],
+        "configuration": config, "completed_steps": [], "stage_elapsed_s": {},
     }
     manifest_file = out / "run.json"
     save_json(manifest_file, manifest)
@@ -134,27 +138,37 @@ def run(args):
         for label, command in command_plan(args, out):
             print("[level1] " + label, flush=True)
             started = time.perf_counter()
-            main(command[3:], session=session)
-            print(f'[level1] {label} complete in {time.perf_counter() - started:.1f}s', flush=True)
+            try:
+                main(command[3:], session=session)
+            finally:
+                elapsed = round(time.perf_counter() - started, 3)
+                manifest["stage_elapsed_s"][label] = elapsed
+            print(f'[level1] {label} complete in {elapsed:.1f}s | total elapsed {time.perf_counter() - run_started:.1f}s', flush=True)
             manifest["completed_steps"].append(label)
             save_json(manifest_file, manifest)
         gallery = json.loads((out / "report" / "gallery.json").read_text(encoding="utf-8"))
         summary = {
             "status": "complete", "configuration": config,
+            "stage_elapsed_s": manifest["stage_elapsed_s"], "elapsed_s": round(time.perf_counter() - run_started, 3),
             "cohorts": gallery["cohorts"], "conditional": gallery.get("conditional"),
             "report": "report/index.html", "gallery_data": "report/gallery.json",
             "note": "Cohorts and reused conditional attempts are separate; no pooled success score.",
         }
         save_json(out / "results.json", summary)
         manifest["status"] = "complete"
+        manifest["elapsed_s"] = summary["elapsed_s"]
         manifest["finished_utc"] = datetime.now(timezone.utc).isoformat()
         save_json(manifest_file, manifest)
     except BaseException as exc:
         manifest["status"] = "interrupted" if isinstance(exc, KeyboardInterrupt) else "failed"
+        manifest["elapsed_s"] = round(time.perf_counter() - run_started, 3)
         manifest["error"] = str(exc)
         save_json(manifest_file, manifest)
+        print(f'[level1] {manifest["status"]} after {manifest["elapsed_s"]:.1f}s', flush=True)
         raise
-    print("\n[level1] Complete. Open " + str(out / "report" / "index.html"), flush=True)
+    minutes, seconds = divmod(manifest["elapsed_s"], 60)
+    print(f'\n[level1] Complete in {int(minutes)}m {seconds:.1f}s ({manifest["elapsed_s"]:.1f}s). Open '
+          + str(out / "report" / "index.html"), flush=True)
     return out / "report" / "index.html"
 
 

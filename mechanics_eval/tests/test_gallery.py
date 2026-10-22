@@ -62,7 +62,7 @@ class GalleryTests(unittest.TestCase):
             before=digest(result);scientific=None;card_count=None
             with patch('mechanics_eval.milestone.score_run',side_effect=AssertionError('export must not rescore')),patch('mechanics_eval.rollouts.ModuleAdapter',side_effect=AssertionError('export must not infer')):
                 for mode in ('all','fail','unknown','nonpass','none'):
-                    out=root/mode;export_gifs([source],[result],out,mode)
+                    out=root/mode;export_gifs([source],[result],out,mode,gif_workers=1)
                     data=json.loads((out/'gallery.json').read_text())
                     self.assertEqual(data['design']['contexts'],[1])
                     self.assertEqual(data['design']['generated_steps'],[16])

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import shutil
 import hashlib
+import time
 import jax
 import numpy as np
 from .evidence import digest,dump_json,load_case,save_case
@@ -79,7 +80,7 @@ def finalize(out, engine=None):
         conditional_atomic=conditional['measurement_aggregate']['per_mechanic'],seeds=seed_results)
     ordinary['sampling_summary']='First sample for each engine seed, without any eligibility filtering.'
     conditional['sampling_summary']=summary
-    dump_json(out/'unconditional-results.json',ordinary);dump_json(out/'conditional-results.json',conditional)
+    dump_json(out/'unconditional-results.json',ordinary,compact=True);dump_json(out/'conditional-results.json',conditional,compact=True)
     from .performance import write_csv, markdown
     for name, result in (('unconditional',ordinary),('conditional',conditional)):
         write_csv(out/(name+'-mechanics.csv'),result['mechanic_performance'])
@@ -98,11 +99,12 @@ def finalize(out, engine=None):
             selected_conditional=name in selected_by_case,
             score_scope='conditional_full_route' if name in selected_by_case else 'ordinary_unfiltered')
         gallery['samples'][i]=current
-    dump_json(out/'gallery-results.json',gallery)
+    dump_json(out/'gallery-results.json',gallery,compact=True)
     return out/'summary.json'
 
 
 def run(args, session=None):
+    started=time.perf_counter()
     out=Path(args.out)
     if out.exists():raise ValueError('Use a new conditional output directory')
     if not 1<=args.max_samples<2**32:raise ValueError('max-samples must be between 1 and 2**32-1')
@@ -181,7 +183,7 @@ def run(args, session=None):
                 saved=dict(context_last=reader.read(arrays['context'][-1]),
                     generated=[[reader.read(frame) for frame in arrays[f'b{b}_generated']] for b in range(2)],reader=reader.profile)
             saved['rgb_evidence']=str((target/'trajectory.npz').resolve())
-            (cache/name).mkdir();dump_json(cache/name/'measurements.json',saved)
+            (cache/name).mkdir();dump_json(cache/name/'measurements.json',saved,compact=True)
             eligibility=departure_eligibility([saved['context_last']]+saved['generated'][0])
             dump_json(target/'eligibility.json',eligibility)
             trial=dict(case=name,sample_index=sample_index,engine_seed=environment_seed,model_seed=model_seed,
@@ -195,7 +197,10 @@ def run(args, session=None):
         dump_json(out/'sampling.json',sampling)
         print(f'[conditional] {len(sampling["seeds"])}/{len(candidates)} seeds complete | '
               f'{sum(len(s["attempts"]) for s in sampling["seeds"])} attempts | '
-              f'last seed {environment_seed}: {len(trials)} attempts, {selection["status"]}',flush=True)
+              f'last seed {environment_seed}: {len(trials)} attempts, {selection["status"]} | '
+              f'elapsed {time.perf_counter()-started:.1f}s',flush=True)
     manifest['status']='complete';dump_json(evidence/'manifest.json',manifest)
     dump_json(cache/'cache_manifest.json',dict(reader=reader.profile,evidence_manifest_sha256=digest(evidence/'manifest.json')))
-    return finalize(out, engine=engine)
+    target=finalize(out, engine=engine)
+    print(f'[conditional] complete | elapsed {time.perf_counter()-started:.1f}s',flush=True)
+    return target

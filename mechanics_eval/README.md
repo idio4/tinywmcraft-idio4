@@ -22,6 +22,18 @@ python -m mechanics_eval --model path/to/model.npz --gifs fail
 
 Stages share one model and compiled engines in a single Python process. Collection progress groups seeds and updates after each batch at most every 30 seconds, plus completion; conditional progress summarizes each completed seed. Detailed sampling and retry decisions remain in the saved records. Batch sizes and random-key schedules are unchanged. Reports retain individual evidence files without generating a ZIP archive.
 
+Offline GIFs render in up to four separate CPU workers, capped by available CPUs and case count. `--gif-workers 1` uses serial rendering; this setting affects only report export, never model batch size or random keys. Workers use a fresh process context and import only the rendering dependencies, without loading a model or JAX runtime. `--gifs none` starts no rendering workers and is the fastest media setting; `--gifs fail` exports fewer animations while retaining every result.
+
+Large measurement and result JSON files use compact formatting to reduce serialization, disk and copying overhead. Their fields and numerical values are preserved, along with the individual case files and standalone report. Existing runs are not rewritten.
+
+### Timing and profiling
+
+Every evaluation stage logs its own duration and total elapsed time. The final message includes the whole run time in minutes and seconds. `run.json` and root `results.json` save `stage_elapsed_s` (keyed by `collect/focused`, `score/focused`, `conditional`, `gallery`, etc.) and total `elapsed_s`. Failed runs retain elapsed time and the failed stage's duration in `run.json`.
+
+Each collection `manifest.json` also saves `timings_s` with `setup_s`, `reference_s`, `model_rollout_s`, and `evidence_write_s`. The model phase includes reward/done heads; first-use JAX compilation is included in the phase that triggers it. Collection's existing `elapsed_s` measures its collection loop, excluding setup; use the runner's stage duration for the complete stage. These wall-clock measurements identify where a run spends time without changing sampling.
+
+Standalone scoring, conditional sampling, and export commands print elapsed time too. `report/export.json` records export duration, actual GIF worker count, GIF mode, number of GIFs written, and case count, and is linked from the HTML report. Unit tests retain unittest's suite-duration summary; `-b` buffers application logs from passing tests.
+
 Results are written to a new unique, **gitignored** directory, never overwritten:
 
 ```text
@@ -120,7 +132,7 @@ mechanics_eval/
 ├── scenarios.py, focused.py         # Controlled Craftax engine fixtures
 ├── rollouts.py, evidence.py         # Model interface and recorded trajectories
 ├── reader_v2.py, atomic.py, ...     # RGB readers, mechanics rules and scoring
-├── gallery.py, gifs.py              # Full local HTML/GIF report generation
+├── gallery.py, gifs.py, gif_render.py # HTML/report orchestration and CPU-only GIF workers
 ├── audit/                            # Optional reader, missing-fact and human audits
 ├── tests/                            # Regression and fixture controls
 ├── example/media/                   # Two curated GIFs, no large report snapshot
@@ -147,6 +159,7 @@ python -m mechanics_eval --model model.npz --seed 0 --model-seed 42 \
 | `--module NAME` | `train` | Importable model adapter. |
 | `--out DIR` | Unique timestamped directory under `mechanics_eval/runs/` | New run directory; existing paths are rejected. |
 | `--gifs MODE` | `all` | `all`, `fail`, `unknown`, `nonpass` (FAIL and UNKNOWN), or `none`; affects media only. |
+| `--gif-workers N` | `4` | Positive maximum CPU workers for GIF export, capped by CPU/case count. Use `1` for serial export; unused with `--gifs none`. |
 | `--seed N` | `0` | Nonnegative engine seed root; diagnostic uses this seed, other ordinary groups use ten consecutive seeds. |
 | `--model-seed N` | Value of `--seed` | Nonnegative model sampling seed root; change this alone for different draws on the same engine scenarios. |
 | `--batch-size N` | `4` | Positive ordinary collection batch size. Changing it changes model random-key assignment and potentially samples. Conditional retries remain batch size 1. |
@@ -264,7 +277,7 @@ python -m mechanics_eval.cli export-gallery \
   --gifs fail --out mechanics_eval/runs/custom-report
 ```
 
-Required options are `--evidence DIR [DIR ...]`, `--results FILE [FILE ...]`, and `--out DIR`. Supply one result file per evidence directory, in matching order. Optional `--gifs` defaults to `all` and accepts `all`, `fail`, `unknown`, `nonpass`, or `none`. `export-gifs` is an exact alias.
+Required options are `--evidence DIR [DIR ...]`, `--results FILE [FILE ...]`, and `--out DIR`. Supply one result file per evidence directory, in matching order. Optional `--gifs` defaults to `all` and accepts `all`, `fail`, `unknown`, `nonpass`, or `none`. Optional `--gif-workers N` defaults to `4` and caps parallel CPU rendering; use `1` for a serial reference export. GIF pixels, frame order, verdicts and frequencies are independent of worker count. Worker failures propagate and prevent a completed HTML report from being written. `export-gifs` is an exact alias.
 
 To include every cohort from a completed full run in a fresh report:
 
@@ -367,10 +380,10 @@ Run synthetic reporting and Node interaction regressions without historical evid
 
 ```bash
 python -m unittest -v -b mechanics_eval.tests.test_performance \
-  mechanics_eval.tests.test_reporting_integration
+  mechanics_eval.tests.test_reporting_integration mechanics_eval.tests.test_export_optimization
 ```
 
-These cover denominator edge cases, required versus diagnostic checks, scope and cohort separation, model draws versus seeds, CSV/JSON/embedded HTML consistency, all GIF modes, links, and exact-name mechanic clicks. Node.js is needed for interaction checks; that test explicitly skips if Node is unavailable.
+These cover denominator edge cases, required versus diagnostic checks, scope and cohort separation, model draws versus seeds, CSV/JSON/embedded HTML consistency, all GIF modes, links, exact-name mechanic clicks, compact JSON equivalence, serial/parallel GIF byte equivalence, process failures, and collection profiling. Node.js is needed for interaction checks; that test explicitly skips if Node is unavailable.
 
 Run only orchestration tests with mocked stages and model loading:
 
