@@ -14,6 +14,8 @@ class EvaluationSession:
         self.module, self.checkpoint, self.fp32 = module, checkpoint, fp32
         self._adapter = None
         self._engines = {}
+        self._collection_pool = None
+        self._collection_workers = 0
 
     def adapter(self):
         if self._adapter is None:
@@ -26,6 +28,24 @@ class EvaluationSession:
             from .scenarios import Engine
             self._engines[focused] = VariedEngine() if focused else Engine()
         return self._engines[focused]
+
+    def collection_pool(self, workers):
+        if self._collection_pool is None or self._collection_workers < workers:
+            self.close_collection_pool()
+            from concurrent.futures import ProcessPoolExecutor
+            import multiprocessing
+            from .collection import initialize_worker
+            self._collection_pool = ProcessPoolExecutor(
+                max_workers=workers, mp_context=multiprocessing.get_context('spawn'),
+                initializer=initialize_worker, initargs=(self.module, self.checkpoint, self.fp32))
+            self._collection_workers = workers
+        return self._collection_pool
+
+    def close_collection_pool(self):
+        if self._collection_pool is not None:
+            self._collection_pool.shutdown(wait=True, cancel_futures=True)
+            self._collection_pool = None
+            self._collection_workers = 0
 
 
 @dataclass
@@ -99,6 +119,11 @@ def validate_frame(frame, batch):
 class ModuleAdapter:
     """Only RGB, incoming actions and random keys cross this boundary. No engine or labels."""
     def __init__(self, module, checkpoint, fp32=False):
+        if module == 'train':
+            # The original trainer stored its pytree as arr_N; current train uses enc.N/dec.N/df.N.
+            with np.load(checkpoint, allow_pickle=False) as archive:
+                if 'meta' in archive.files and 'arr_0' in archive.files and 'enc.0' not in archive.files:
+                    module = 'train_tiny'
         self.module = importlib.import_module(module)
         if fp32:
             # Original NorMuon exports its precision controls through legacy.
@@ -108,6 +133,13 @@ class ModuleAdapter:
                 mod.CDT = jnp.float32
                 mod.MP = dict(dtype=jnp.float32, param_dtype=jnp.float32)
         self.model = self.module.load_model(checkpoint)
+        if module == 'train_tiny' and fp32:
+            # Legacy layers hardcode BF16. Set compute dtype on this model only; keep weights and globals intact.
+            import jax.numpy as jnp
+            from flax import nnx
+            for _, node in nnx.iter_graph(self.model):
+                if isinstance(node, (nnx.Linear, nnx.Conv, nnx.ConvTranspose)):
+                    node.dtype = jnp.float32
         for name in ('start', 'step'):
             if not callable(getattr(self.module, name, None)):
                 raise ValueError(f'{module} does not implement {name}')

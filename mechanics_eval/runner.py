@@ -35,7 +35,8 @@ def arguments(argv=None):
     p.add_argument("--gif-workers", type=int, default=4, help="Maximum CPU workers for offline GIF export; does not affect sampling")
     p.add_argument("--seed", type=int, default=0, help="First engine seed; focused/supplementary cohorts use ten consecutive seeds")
     p.add_argument("--model-seed", type=int, help="Optional model sampling seed root; the default follows --seed")
-    p.add_argument("--batch-size", type=int, default=4, help="Ordinary sampling batch size (affects model random keys)")
+    p.add_argument("--batch-size", type=int, default=8, help="Ordinary sampling batch size (affects model random keys)")
+    p.add_argument("--workers", type=int, default=4, help="Maximum ordinary collection processes; 1 runs serially")
     p.add_argument("--max-samples", type=int, default=20, help="Max conditional attempts per engine seed, including first")
     p.add_argument("--seed-step", type=int, default=1, help="Positive odd increment for conditional sampling keys")
     p.add_argument("--fp32", action="store_true", default=True, help="Use fp32 sampling (default; matches recorded Level 1)")
@@ -47,6 +48,8 @@ def arguments(argv=None):
         p.error("seeds must be nonnegative")
     if args.batch_size < 1 or args.max_samples < 1 or args.seed_step < 1 or args.seed_step % 2 != 1:
         p.error("batch-size/max-samples must be positive; seed-step must be positive and odd")
+    if args.workers < 1:
+        p.error("workers must be positive")
     if args.gif_workers < 1:
         p.error("gif-workers must be positive")
     if not all(part.isidentifier() for part in args.module.split(".")):
@@ -71,7 +74,7 @@ def command_plan(args, out):
         evidence = out / "evidence" / name
         step = cmd + ["collect", "--model", model, "--module", args.module, *fp,
                       "--suite", suite, "--samples", str(samples), "--seed", str(args.seed),
-                      "--batch-size", str(args.batch_size), "--context", "1", "--horizon", "16",
+                      "--batch-size", str(args.batch_size), "--workers", str(args.workers), "--context", "1", "--horizon", "16",
                       "--out", str(evidence)]
         if args.model_seed is not None:
             step += ["--model-seed", str(args.model_seed)]
@@ -121,7 +124,7 @@ def run(args):
     config = {
         "model": str(args.model.expanduser().resolve()), "checkpoint_sha256": checksum(args.model),
         "module": args.module, "fp32": args.fp32, "seed": args.seed,
-        "model_seed": args.model_seed, "batch_size": args.batch_size,
+        "model_seed": args.model_seed, "batch_size": args.batch_size, "workers": args.workers,
         "context": 1, "horizon": 16, "max_samples": args.max_samples,
         "seed_step": args.seed_step, "gifs": args.gifs, "gif_workers": args.gif_workers,
     }
@@ -131,11 +134,14 @@ def run(args):
     }
     manifest_file = out / "run.json"
     save_json(manifest_file, manifest)
+    session = None
     try:
         from .cli import main
         from .rollouts import EvaluationSession
         session = EvaluationSession(args.module, args.model.expanduser().resolve(), args.fp32)
         for label, command in command_plan(args, out):
+            if not label.startswith("collect/"):
+                session.close_collection_pool()
             print("[level1] " + label, flush=True)
             started = time.perf_counter()
             try:
@@ -166,6 +172,9 @@ def run(args):
         save_json(manifest_file, manifest)
         print(f'[level1] {manifest["status"]} after {manifest["elapsed_s"]:.1f}s', flush=True)
         raise
+    finally:
+        if session is not None:
+            session.close_collection_pool()
     minutes, seconds = divmod(manifest["elapsed_s"], 60)
     print(f'\n[level1] Complete in {int(minutes)}m {seconds:.1f}s ({manifest["elapsed_s"]:.1f}s). Open '
           + str(out / "report" / "index.html"), flush=True)

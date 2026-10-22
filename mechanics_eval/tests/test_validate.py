@@ -35,6 +35,8 @@ class ValidateTests(unittest.TestCase):
                 self.assertEqual(command[command.index("--context") + 1], "1")
                 self.assertEqual(command[command.index("--horizon") + 1], "16")
                 self.assertIn("--fp32", command)
+                self.assertEqual(command[command.index("--batch-size") + 1], "8")
+                self.assertEqual(command[command.index("--workers") + 1], "4")
             controlled = steps[2][1]
             self.assertEqual(controlled[controlled.index("--scenario") + 1:],
                              ["move_free", "move_blocked", "turn_loop", "noop", "table_leave_return"])
@@ -52,13 +54,14 @@ class ValidateTests(unittest.TestCase):
         with TemporaryDirectory() as temp:
             root = Path(temp)
             args = self.make_args(root, "--gifs", "fail", "--seed", "3", "--model-seed", "88",
-                                  "--native-precision", "--batch-size", "2", "--max-samples", "7")
+                                  "--native-precision", "--batch-size", "2", "--workers", "1", "--max-samples", "7")
             plan = validate.command_plan(args, root / "new")
             for _, command in plan[:4]:
                 self.assertNotIn("--fp32", command)
                 self.assertEqual(command[command.index("--seed") + 1], "3")
                 self.assertEqual(command[command.index("--model-seed") + 1], "88")
                 self.assertEqual(command[command.index("--batch-size") + 1], "2")
+                self.assertEqual(command[command.index("--workers") + 1], "1")
             self.assertEqual(plan[-2][1][plan[-2][1].index("--max-samples") + 1], "7")
             self.assertEqual(plan[-1][1][plan[-1][1].index("--gifs") + 1], "fail")
 

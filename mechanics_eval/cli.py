@@ -9,18 +9,23 @@ import time
 
 def collect(args, session=None):
     import jax
-    import numpy as np
-    from mechanics_eval.evidence import digest, dump_json, save_case
-    from mechanics_eval.focused import VariedEngine, category, suite, variants
-    from mechanics_eval.rollouts import ModuleAdapter, reference_pair
-    from mechanics_eval.scenarios import Engine
+    from mechanics_eval.evidence import digest, dump_json
+    from mechanics_eval.focused import suite, variants
+    from mechanics_eval.rollouts import EvaluationSession
     if args.out.exists():
         raise ValueError('Use a new evidence directory; previous runs are never overwritten')
     if not args.model.is_file():
         raise ValueError('An existing local checkpoint is required')
+    if getattr(args, 'workers', 4) < 1:
+        raise ValueError('workers must be positive')
+    if session is None:
+        session = EvaluationSession(args.module, args.model, args.fp32)
+        try:
+            return collect(args, session=session)
+        finally:
+            session.close_collection_pool()
     setup_started = time.perf_counter()
-    engine = session.engine(args.suite != 'existing') if session else (Engine() if args.suite == 'existing' else VariedEngine())
-    adapter = session.adapter() if session else ModuleAdapter(args.module, args.model, args.fp32)
+    adapter = session.adapter()
     specs = suite(args.suite)
     if args.scenario:
         unknown = set(args.scenario) - {s.name for s in specs}
@@ -32,10 +37,11 @@ def collect(args, session=None):
         'errors': [], 'config': {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
         'provenance': {'backend': jax.default_backend(), 'checkpoint_sha256': digest(args.model),
         'module_sha256': digest(adapter.module.__file__),
+        'resolved_module': getattr(adapter.module, '__name__', args.module),
         'sampling_settings': {key: float(getattr(getattr(adapter.module, 'legacy', adapter.module), key))
                               for key in ('STEPS', 'CTX_SIGNAL')
                               if hasattr(getattr(adapter.module, 'legacy', adapter.module), key)},
-        'model_window': int(adapter.model.win),
+        'model_window': int(getattr(adapter.model, 'win', getattr(adapter.module, 'WIN', None))),
         'git_head': subprocess.check_output(['git','rev-parse','HEAD'], cwd=Path(__file__).resolve().parent.parent, text=True).strip(),
         'packages': {name: importlib.metadata.version(name) for name in ('craftax','jax','flax','numpy')},
         'sources': {str(p): digest(p) for p in [Path(__file__), *sorted(Path(__file__).resolve().parent.glob('*.py'))]}}}
@@ -44,47 +50,43 @@ def collect(args, session=None):
     timings = dict(setup_s=round(start-setup_started,3),reference_s=0.,model_rollout_s=0.,evidence_write_s=0.)
     jobs = [(variants(s, i) if args.suite != 'existing' else s, args.seed + i)
             for s in specs for i in range(args.samples)]
+    from functools import partial
+    import os
+    from .collection import collect_batch
+    batches = [(offset, jobs[offset:offset + args.batch_size])
+               for offset in range(0, len(jobs), args.batch_size)]
+    workers = min(getattr(args, 'workers', 4), os.cpu_count() or 1, len(batches))
+    report['workers_used'] = workers
+    report['timing_semantics'] = 'reference/model/evidence durations sum batch worker time; setup_s is parent setup; elapsed_s is wall time'
+    task = partial(collect_batch, args, provenance=report['provenance'])
     last_progress = start
-    for offset in range(0, len(jobs), args.batch_size):
-        batch = jobs[offset:offset + args.batch_size]
-        phase_started = time.perf_counter()
-        refs = [reference_pair(engine, spec, seed, args.context, args.horizon) for spec, seed in batch]
-        timings['reference_s'] += time.perf_counter()-phase_started
-        for repeat in range(args.model_samples):
-            model_seed = int(np.random.SeedSequence([args.seed if args.model_seed is None else args.model_seed, offset, repeat, 933]).generate_state(1)[0])
-            predictions = []
-            phase_started = time.perf_counter()
-            for branch in range(2):
-                branch_refs = [pair[branch] for pair in refs]
-                future = np.asarray([list(ref.actions) + [0] * (args.horizon - len(ref.actions)) for ref in branch_refs])
-                predictions.append(adapter.rollout(np.stack([ref.context for ref in branch_refs]),
-                    np.stack([ref.context_actions for ref in branch_refs]), future, model_seed, True))
-            timings['model_rollout_s'] += time.perf_counter()-phase_started
-            phase_started = time.perf_counter()
-            for i, ((spec, seed), pair) in enumerate(zip(batch, refs)):
-                name = f'{spec.name}_s{seed}_m{repeat}'
-                single = [{k: v[i] if v is not None else None for k, v in pred.items()} for pred in predictions]
-                save_case(args.out / name, spec, pair, single, seed, model_seed, repeat,
-                          category(spec.name) if args.suite == 'focused' else spec.category)
-                meta_path = args.out / name / 'metadata.json'
-                meta = json.loads(meta_path.read_text())
-                meta['replay'] = {'context_length': args.context, 'engine_seed': seed,
-                    'model_seed_root': args.seed if args.model_seed is None else args.model_seed,
-                    'module': args.module, 'checkpoint_sha256': report['provenance']['checkpoint_sha256'],
-                    'batch_offset': offset, 'batch_index': i, 'batch_size_actual': len(batch),
-                    'batch_size_configured': args.batch_size, 'fp32': args.fp32,
-                    'sampling_settings': report['provenance']['sampling_settings'],
-                    'sampling': 'module.step defaults; fold_in(PRNGKey(model_seed), timestep); identical branch keys'}
-                dump_json(meta_path, meta)
-                report['cases'].append(name)
+    print(f'[collect/{args.out.name}] {workers} worker(s) | batch size {args.batch_size} | adapter {report["provenance"]["resolved_module"]}', flush=True)
+    try:
+        if workers > 1:
+            pool = session.collection_pool(workers)
+            pending = [pool.submit(task, offset, batch) for offset, batch in batches]
+            results = (future.result() for future in pending)
+        else:
+            results = (task(offset, batch, session=session) for offset, batch in batches)
+        for names, durations in results:
+            report['cases'].extend(names)
+            for key, value in durations.items():
+                timings[key] += value
             dump_json(args.out / 'manifest.json', report)
-            timings['evidence_write_s'] += time.perf_counter()-phase_started
-        now = time.perf_counter()
-        if now - last_progress >= 30 or offset + len(batch) == len(jobs):
-            completed = min(offset + len(batch), len(jobs)) * args.model_samples
-            print(f'[collect/{args.out.name}] {completed}/{len(jobs) * args.model_samples} cases | '
-                  f'seeds {args.seed}–{args.seed + args.samples - 1} | elapsed {now - start:.1f}s', flush=True)
-            last_progress = now
+            now = time.perf_counter()
+            if now - last_progress >= 30 or len(report['cases']) == len(jobs) * args.model_samples:
+                completed = len(report['cases'])
+                print(f'[collect/{args.out.name}] {completed}/{len(jobs) * args.model_samples} cases | '
+                      f'seeds {args.seed}–{args.seed + args.samples - 1} | elapsed {now - start:.1f}s', flush=True)
+                last_progress = now
+    except BaseException as exc:
+        report.update(status='interrupted' if isinstance(exc, KeyboardInterrupt) else 'failed',
+                      elapsed_s=round(time.perf_counter() - start, 3))
+        report['errors'].append(str(exc))
+        report['timings_s'] = {key:round(value,3) for key,value in timings.items()}
+        dump_json(args.out / 'manifest.json', report)
+        session.close_collection_pool()
+        raise
     report.update(status='complete', elapsed_s=round(time.perf_counter() - start, 3))
     report['timings_s'] = {key:round(value,3) for key,value in timings.items()}
     dump_json(args.out / 'manifest.json', report)
@@ -92,7 +94,7 @@ def collect(args, session=None):
           f'{report["elapsed_s"]:.1f}s | {args.out}', flush=True)
     print(f'[collect/{args.out.name}] reference {timings["reference_s"]:.1f}s | '
           f'model + heads {timings["model_rollout_s"]:.1f}s | evidence writing {timings["evidence_write_s"]:.1f}s | '
-          f'setup {timings["setup_s"]:.1f}s', flush=True)
+          f'setup {timings["setup_s"]:.1f}s (phase sums across workers)', flush=True)
 
 
 def main(argv=None, session=None):
@@ -110,8 +112,10 @@ def main(argv=None, session=None):
     c.add_argument('--model-seed', type=int, help='Independent sampling seed root; defaults to --seed')
     c.add_argument('--horizon', type=int, default=16)
     c.add_argument('--context', type=int, default=1)
-    c.add_argument('--batch-size', type=int, default=4)
-    c.add_argument('--out', type=Path, required=True)
+    c.add_argument('--batch-size', type=int, default=8)
+    c.add_argument('--workers', type=int, default=4, help='Maximum ordinary collection processes; 1 runs serially')
+    c.add_argument('--out', type=Path, help='New evidence directory; default: unique timestamped directory under mechanics_eval/runs/')
+    c.add_argument('--score', action='store_true', help='Score after collection into OUT/scores; no GIFs')
     review = commands.add_parser('export-review')
     review.add_argument('--evidence',type=Path,required=True)
     review.add_argument('--out',type=Path,required=True)
@@ -170,9 +174,22 @@ def main(argv=None, session=None):
         from mechanics_eval.conditional import run
         print(run(args, session=session))
     elif args.command == 'collect':
-        if min(args.samples, args.model_samples, args.batch_size) < 1 or not 1 <= args.horizon <= 128 or not 1 <= args.context <= 24 or args.seed < 0 or (args.model_seed is not None and args.model_seed < 0):
+        if min(args.samples, args.model_samples, args.batch_size, args.workers) < 1 or not 1 <= args.horizon <= 128 or not 1 <= args.context <= 24 or args.seed < 0 or (args.model_seed is not None and args.model_seed < 0):
             p.error('invalid counts, horizon, context or seed')
+        if args.out is None:
+            from datetime import datetime, timezone
+            from uuid import uuid4
+            stamp = datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')
+            args.out = Path(__file__).resolve().parent / 'runs' / f'{args.suite}-{stamp}-{uuid4().hex[:6]}'
         collect(args, session=session)
+        if args.score:
+            from mechanics_eval.milestone import score_run
+            if session is not None:
+                session.close_collection_pool()
+            report = score_run(args.out, args.out / 'scores', engine=session.engine() if session else None)
+            if report['status'].startswith('failed'):
+                raise SystemExit(1)
+            print(f'[collect/{args.out.name}] scores: {args.out / "scores" / "results.json"}', flush=True)
     elif args.command in ('export-gallery','export-gifs'):
         from mechanics_eval.gifs import export_gifs
         print(export_gifs(args.evidence, args.results, args.out, args.gifs, args.gif_workers))

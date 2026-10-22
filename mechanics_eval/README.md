@@ -143,7 +143,7 @@ mechanics_eval/
 
 ## Advanced tools and tests
 
-Run these commands from the repository root in the existing TinyWMCraft environment. Paths below are examples: replace `mechanics_eval/runs/example-run` with an existing run for read-only inputs, and choose fresh output paths. Separate CLI invocations each start a new process; model and compiled-engine reuse applies to the full one-command runner.
+Run these commands from the repository root in the existing TinyWMCraft environment. Paths below are examples: replace `mechanics_eval/runs/example-run` with an existing run for read-only inputs, and choose fresh output paths. Separate CLI invocations each start a new process; model and compiled-engine reuse applies within each collection worker across the full one-command runner.
 
 ### Full evaluation options
 
@@ -162,12 +162,23 @@ python -m mechanics_eval --model model.npz --seed 0 --model-seed 42 \
 | `--gif-workers N` | `4` | Positive maximum CPU workers for GIF export, capped by CPU/case count. Use `1` for serial export; unused with `--gifs none`. |
 | `--seed N` | `0` | Nonnegative engine seed root; diagnostic uses this seed, other ordinary groups use ten consecutive seeds. |
 | `--model-seed N` | Value of `--seed` | Nonnegative model sampling seed root; change this alone for different draws on the same engine scenarios. |
-| `--batch-size N` | `4` | Positive ordinary collection batch size. Changing it changes model random-key assignment and potentially samples. Conditional retries remain batch size 1. |
+| `--batch-size N` | `8` | Positive ordinary collection batch size. Changing it changes model random-key assignment and potentially samples. Conditional retries remain batch size 1. |
+| `--workers N` | `4` | Maximum ordinary collection processes, capped by CPU and batch count. Use `1` for serial collection. Does not change batch membership or random keys. |
 | `--max-samples N` | `20` | Conditional attempt budget per engine seed, including the reused first attempt; conditional sampling requires `1 <= N < 2**32`. |
 | `--seed-step N` | `1` | Positive odd increment less than `2**32` between conditional model sampling seeds, wrapping modulo `2**32`. |
 | `--fp32` | Enabled | Use FP32 sampling. |
 | `--native-precision` | Disabled | Use the adapter's default precision instead of forcing FP32. |
 | `-h`, `--help` | — | Show help without running evaluation. Available on all commands below too. |
+
+Ordinary collection defaults to batch size 8 and up to four fresh worker processes for every cohort and compatible model adapter. Workers reuse their own model and compiled engines across collection stages; they close before scoring and conditional retries. The parent writes one ordered manifest and compact progress logs. `elapsed_s` is wall time; reference/model/evidence phase timings sum batch worker durations and can exceed wall time. Conditional retries retain their single-case, sequential selection protocol; `--workers` and `--batch-size` apply to ordinary collection. Offline GIF workers remain controlled separately by `--gif-workers`.
+
+These defaults were the fastest collection settings tested on a 10-core Mac CPU using iteration1 and iteration3 on a 32-case movement subset, not a universal optimum. Startup, available memory, other models and full-suite workloads can change the best setting. Changing batch size changes samples and can change test verdicts: in that subset, iteration1 had two PASS/UNKNOWN verdict swaps between batch 4 and 8, despite unchanged aggregate frequencies; iteration3's verdicts were unchanged. Keep batch size, seeds and software fixed for reproduction. To retain the previous batch grouping while using parallelism:
+
+```bash
+python -m mechanics_eval --model model.npz --batch-size 4 --workers 4
+```
+
+Use `--workers 1 --batch-size 4` for the previous serial configuration. Existing saved reports and evidence are never rewritten.
 
 The runner fixes context to 1 frame, horizon to 16 steps, and the cohort sizes described above. Custom scenarios, context lengths, horizons, and sample counts use `collect` instead and do not constitute the fixed Level 1 design.
 
@@ -195,11 +206,21 @@ Replace `collect` in the second command with any command in this table to inspec
 
 ### Collect custom evidence
 
+The default `--module train` automatically selects the original `train_tiny` loader for legacy checkpoints with `arr_N` weights, including `runs/best/iteration1.npz`. Current `enc.N`/`dec.N`/`df.N` checkpoints continue to use `train`. Selection uses checkpoint contents, not filenames, and applies inside every worker. Logs and saved provenance record the resolved module. Explicit `--module train_tiny` is also supported. Native legacy BF16 computations remain unchanged; `--fp32` sets legacy layer compute dtypes on the loaded model without rewriting checkpoint weights or changing trainer globals.
+
+For focused collection and scoring in one command, using the adapter's native precision and a fresh timestamped output directory:
+
+```bash
+python -m mechanics_eval.cli collect --model runs/best/iteration3.npz --score
+```
+
+The default suite is `focused`, with 10 engine seeds per scenario, batch size 8 and up to four workers. The command prints the output path. Without `--out`, it creates a unique directory such as `mechanics_eval/runs/focused-20261022-120000-a1b2c3/`. Saved evidence and its manifest go directly into that directory; scores go in its `scores/` subdirectory. `--score` runs only after successful collection and generates no GIFs. Omit `--score` to collect evidence only. Explicit `--out DIR` still means the evidence directory and must be new; with `--score`, results are written to `DIR/scores/results.json`.
+
 ```bash
 python -m mechanics_eval.cli collect --model model.npz --fp32 \
   --suite existing --scenario move_free move_blocked \
   --samples 10 --model-samples 1 --seed 0 --model-seed 42 \
-  --context 1 --horizon 16 --batch-size 4 \
+  --context 1 --horizon 16 --batch-size 8 --workers 4 \
   --out mechanics_eval/runs/custom-evidence
 ```
 
@@ -216,8 +237,10 @@ python -m mechanics_eval.cli collect --model model.npz --fp32 \
 | `--model-seed N` | Value of `--seed` | Nonnegative model sampling seed root. |
 | `--context N` | `1` | Number of real conditioning frames, from 1 through 24. |
 | `--horizon N` | `16` | Generated rollout length, from 1 through 128; reference trajectories stop at terminal frames. |
-| `--batch-size N` | `4` | Positive number of cases per model batch; affects model random keys. |
-| `--out DIR` | Required | New evidence directory. |
+| `--batch-size N` | `8` | Positive number of cases per model batch; affects model random keys. |
+| `--workers N` | `4` | Maximum ordinary collection processes, capped by CPU and batch count. Use `1` for serial collection; keys and batch membership are unchanged. |
+| `--out DIR` | Unique timestamped directory under `mechanics_eval/runs/` | New evidence directory; existing paths are rejected. |
+| `--score` | Disabled | Score after successful collection into `OUT/scores/`, in the same invocation; no GIFs. |
 
 Collection records both action branches, metadata, sampling/replay settings, and `trajectory.npz` in each case directory, plus a collection `manifest.json`. Frame-by-frame rollout and reward/done heads use the adapter interface described above.
 
